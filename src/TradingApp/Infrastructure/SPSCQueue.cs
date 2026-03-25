@@ -5,7 +5,7 @@ namespace Infrastructure
     /// <summary>
     /// A bounded, lock-free Single-Producer Single-Consumer (SPSC) ring buffer queue.
     /// </summary>
-    public class SPSCQueue<T>
+    public class SPSCQueue<T> where T : class
     {
         private readonly T[] _buffer;
         private readonly int _mask;

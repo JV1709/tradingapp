@@ -22,5 +22,19 @@
             {
             }
         }
+
+        public class BadRequestException : Exception
+        {
+            public BadRequestException(string message) : base(message)
+            {
+            }
+        }
+
+        public class InstrumentsNotFoundException : Exception
+        {
+            public InstrumentsNotFoundException() : base("No instruments found.")
+            {
+            }
+        }
     }
 }

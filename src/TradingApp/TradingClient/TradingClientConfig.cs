@@ -4,6 +4,7 @@
     {
         public required AccountClientConfig AccountClientConfig { get; set; }
         public required PriceClientConfig PriceClientConfig { get; set; }
+        public required InstrumentClientConfig InstrumentClientConfig { get; set; }
         public required OrderClientConfig OrderClientConfig { get; set; }
     }
 
@@ -17,6 +18,13 @@
     public class PriceClientConfig
     {
 
+        // Domain name of the trading server, e.g., "http://localhost:5000" or "http://tradingserver.com"
+        // Can also be an IP address
+        public required string Hostname { get; set; }
+    }
+
+    public class InstrumentClientConfig
+    {
         // Domain name of the trading server, e.g., "http://localhost:5000" or "http://tradingserver.com"
         // Can also be an IP address
         public required string Hostname { get; set; }

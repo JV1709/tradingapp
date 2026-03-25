@@ -1,4 +1,4 @@
-﻿namespace Model
+﻿namespace Model.Domain
 {
     public class Order
     {
@@ -36,25 +36,5 @@
     {
         Buy = 1,
         Sell = 2
-    }
-
-    public class PlaceOrderRequest
-    {
-        public required string AccountKey { get; set; }
-        public required string Symbol { get; set; }
-        public long Quantity { get; set; }
-        public decimal Price { get; set; }
-        // Side: 1 for buy, 2 for sell
-        public Side Side { get; set; }
-    }
-
-    public class PlaceOrderResponse
-    {
-        public required string OrderId { get; set; }
-    }
-
-    public class CancelOrderRequest
-    {
-        public required string OrderId { get; set; }
     }
 }

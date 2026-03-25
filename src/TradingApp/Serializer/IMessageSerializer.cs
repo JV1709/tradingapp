@@ -4,6 +4,6 @@
     {
         byte[] Serialize<T>(T message);
         T Deserialize<T>(Stream stream);
-        Task<T> DeserializeAsync<T>(Stream stream, CancellationToken cancellationToken = default);
+        Task<T?> DeserializeAsync<T>(Stream stream, CancellationToken cancellationToken = default);
     }
 }

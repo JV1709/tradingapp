@@ -67,7 +67,7 @@
             }
         }
 
-        public async Task<T> DeserializeAsync<T>(Stream stream, CancellationToken cancellationToken = default)
+        public async Task<T?> DeserializeAsync<T>(Stream stream, CancellationToken cancellationToken = default)
         {
             var lengthBuffer = new byte[_lengthPrefixBytes];
             await stream.ReadExactlyAsync(lengthBuffer, cancellationToken);
@@ -87,11 +87,6 @@
             try
             {
                 var result = System.Text.Json.JsonSerializer.Deserialize<T>(json);
-                if (result == null)
-                {
-                    throw new InvalidOperationException("Deserialized message is null");
-                }
-
                 return result;
             }
             catch (System.Text.Json.JsonException ex)

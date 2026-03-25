@@ -1,8 +1,8 @@
-﻿using Model;
-using Serializer;
+﻿using Serializer;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Collections.Concurrent;
+using Model.Domain;
 
 namespace TradingClient
 {

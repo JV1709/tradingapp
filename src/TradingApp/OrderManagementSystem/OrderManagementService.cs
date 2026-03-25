@@ -1,10 +1,10 @@
 namespace OrderManagementSystem
 {
-    public class Worker : BackgroundService
+    public class OrderManagementService : BackgroundService
     {
-        private readonly ILogger<Worker> _logger;
+        private readonly ILogger<OrderManagementService> _logger;
 
-        public Worker(ILogger<Worker> logger)
+        public OrderManagementService(ILogger<OrderManagementService> logger)
         {
             _logger = logger;
         }

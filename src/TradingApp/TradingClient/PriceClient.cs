@@ -1,6 +1,6 @@
-﻿using Model;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Collections.Concurrent;
+using Model.Domain;
 
 namespace TradingClient
 {

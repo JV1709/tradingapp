@@ -1,12 +1,17 @@
-namespace MatchingEngine
-{
-    public class Worker : BackgroundService
-    {
-        private readonly ILogger<Worker> _logger;
+using Infrastructure;
+using Model.Domain;
 
-        public Worker(ILogger<Worker> logger)
+namespace RiskManagementSystem
+{
+    public class RiskManagementService : BackgroundService
+    {
+        private readonly ILogger<RiskManagementService> _logger;
+        private readonly IProducerQueueSystem<GatewayRequest> _producerQueueSystem;
+
+        public RiskManagementService(ILogger<RiskManagementService> logger, IProducerQueueSystem<GatewayRequest> producerQueueSystem)
         {
             _logger = logger;
+            _producerQueueSystem = producerQueueSystem;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -1,10 +1,10 @@
-namespace OrderGateway
+namespace MatchingEngine
 {
-    public class GatewayWorker : BackgroundService
+    public class MatchingEngineService : BackgroundService
     {
-        private readonly ILogger<GatewayWorker> _logger;
+        private readonly ILogger<MatchingEngineService> _logger;
 
-        public GatewayWorker(ILogger<GatewayWorker> logger)
+        public MatchingEngineService(ILogger<MatchingEngineService> logger)
         {
             _logger = logger;
         }

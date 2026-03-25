@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Model", "Model\Model.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFSM", "OrderFSM\OrderFSM.csproj", "{C0982FA4-8E58-440F-9676-5A6FE5519570}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingPlatform", "TradingPlatform\TradingPlatform.csproj", "{AFB71A9C-EFB5-4217-B4F0-759EC3BBA462}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderGateway", "OrderGateway\OrderGateway.csproj", "{7C1161BF-D986-4138-AEC0-E4ADE7F9A581}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingClient", "TradingClient\TradingClient.csproj", "{10FA679E-9458-9137-3B6F-89D884220AD5}"
@@ -20,6 +18,12 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Serializer", "Serializer\Serializer.csproj", "{0F99684A-DF48-44AE-A5D7-4DE8CB855BB0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Infrastructure", "Infrastructure\Infrastructure.csproj", "{F402DE2A-F01A-49CB-937F-BEAB379859F0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RiskManagementSystem", "RiskManagementSystem\RiskManagementSystem.csproj", "{DC3633C6-37F1-4E0A-8CA7-CEF94DBF6633}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Repository", "Repository\Repository.csproj", "{6AD01DC9-B5F8-43FE-A931-470133D4C322}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingPlatform", "TradingPlatform\TradingPlatform.csproj", "{85A1147E-8717-6AE0-266D-FD49BC4D07F5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -35,10 +39,6 @@ Global
 		{C0982FA4-8E58-440F-9676-5A6FE5519570}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C0982FA4-8E58-440F-9676-5A6FE5519570}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C0982FA4-8E58-440F-9676-5A6FE5519570}.Release|Any CPU.Build.0 = Release|Any CPU
-		{AFB71A9C-EFB5-4217-B4F0-759EC3BBA462}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{AFB71A9C-EFB5-4217-B4F0-759EC3BBA462}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{AFB71A9C-EFB5-4217-B4F0-759EC3BBA462}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{AFB71A9C-EFB5-4217-B4F0-759EC3BBA462}.Release|Any CPU.Build.0 = Release|Any CPU
 		{7C1161BF-D986-4138-AEC0-E4ADE7F9A581}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{7C1161BF-D986-4138-AEC0-E4ADE7F9A581}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7C1161BF-D986-4138-AEC0-E4ADE7F9A581}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -63,6 +63,18 @@ Global
 		{F402DE2A-F01A-49CB-937F-BEAB379859F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F402DE2A-F01A-49CB-937F-BEAB379859F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F402DE2A-F01A-49CB-937F-BEAB379859F0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DC3633C6-37F1-4E0A-8CA7-CEF94DBF6633}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DC3633C6-37F1-4E0A-8CA7-CEF94DBF6633}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DC3633C6-37F1-4E0A-8CA7-CEF94DBF6633}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DC3633C6-37F1-4E0A-8CA7-CEF94DBF6633}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6AD01DC9-B5F8-43FE-A931-470133D4C322}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6AD01DC9-B5F8-43FE-A931-470133D4C322}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6AD01DC9-B5F8-43FE-A931-470133D4C322}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6AD01DC9-B5F8-43FE-A931-470133D4C322}.Release|Any CPU.Build.0 = Release|Any CPU
+		{85A1147E-8717-6AE0-266D-FD49BC4D07F5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{85A1147E-8717-6AE0-266D-FD49BC4D07F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{85A1147E-8717-6AE0-266D-FD49BC4D07F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{85A1147E-8717-6AE0-266D-FD49BC4D07F5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

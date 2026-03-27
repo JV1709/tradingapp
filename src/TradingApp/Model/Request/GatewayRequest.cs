@@ -1,4 +1,6 @@
-﻿namespace Model.Domain
+﻿using Model.Domain;
+
+namespace Model.Request
 {
     public enum GatewayRequestType
     {

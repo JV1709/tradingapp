@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace Infrastructure
+namespace Infrastructure.Queue
 {
     /// <summary>
     /// A bounded, lock-free Multiple-Producer Single-Consumer (MPSC) queue.

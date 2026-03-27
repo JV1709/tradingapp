@@ -2,7 +2,8 @@
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Collections.Concurrent;
-using Model.Domain;
+using Model.Event;
+using Model.Request;
 
 namespace TradingClient
 {
@@ -19,7 +20,7 @@ namespace TradingClient
         private readonly CancellationTokenSource _cts = new();
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _subscriptions = new();
 
-        public event Action<OrderUpdate>? OrderUpdated;
+        public event Action<OrderUpdateEvent>? OrderUpdated;
 
         public OrderClient(OrderClientConfig config)
         {
@@ -72,7 +73,7 @@ namespace TradingClient
                     var line = await reader.ReadLineAsync(cancellationToken);
                     if (!string.IsNullOrWhiteSpace(line))
                     {
-                        var update = JsonSerializer.Deserialize<OrderUpdate>(line);
+                        var update = JsonSerializer.Deserialize<OrderUpdateEvent>(line);
                         if (update != null)
                         {
                             // Publish to event bus

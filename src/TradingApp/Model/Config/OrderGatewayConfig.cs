@@ -1,6 +1,6 @@
 ﻿namespace Model.Config
 {
-    public sealed class OrderGatewayConfig
+    public sealed record OrderGatewayConfig
     {
         public const string SectionName = "Gateway";
 

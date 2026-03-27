@@ -2,7 +2,7 @@
 {
     public class Order
     {
-        public required string OrderId { get; set; }
+        public Guid OrderId { get; set; }
         public required string AccountKey { get; set; }
         public OrderStatus Status { get; set; }
         public required string Symbol { get; set; }
@@ -11,14 +11,6 @@
         public decimal Price { get; set; }
         // Side: 1 for buy, 2 for sell
         public Side Side { get; set; }
-    }
-
-    public class OrderUpdate
-    {
-        public required string OrderId { get; set; }
-        public OrderStatus Status { get; set; }
-        public long FilledQuantity { get; set; }
-        public decimal FilledPrice { get; set; }
     }
 
     public enum OrderStatus

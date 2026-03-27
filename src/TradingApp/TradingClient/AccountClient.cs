@@ -86,7 +86,7 @@ namespace TradingClient
 
                 return account;
             }
-            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
             {
                 throw new TradingClientExceptions.UnexpectedErrorException($"Account '{username}' already exists.");
             }
@@ -121,7 +121,7 @@ namespace TradingClient
                     }
                 }
             }
-            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
                 throw new TradingClientExceptions.AccountNotFoundException(username);
             }

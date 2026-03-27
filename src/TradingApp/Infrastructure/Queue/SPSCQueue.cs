@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace Infrastructure
+namespace Infrastructure.Queue
 {
     /// <summary>
     /// A bounded, lock-free Single-Producer Single-Consumer (SPSC) ring buffer queue.
@@ -43,7 +43,7 @@ namespace Infrastructure
         public bool TryEnqueue(T item)
         {
             int currentTail = _tail.Value;
-            int nextTail = (currentTail + 1) & _mask;
+            int nextTail = currentTail + 1 & _mask;
 
             // Full check: If next tail touches head, queue is full.
             if (nextTail == _head.Value)
@@ -72,7 +72,7 @@ namespace Infrastructure
 
             item = _buffer[currentHead];
             _buffer[currentHead] = default!; // Avoid memory leaks for reference types
-            _head.Value = (currentHead + 1) & _mask; // Volatile write, publishes consumed slot to producer
+            _head.Value = currentHead + 1 & _mask; // Volatile write, publishes consumed slot to producer
             return true;
         }
     }

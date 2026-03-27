@@ -1,6 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Infrastructure.Event;
+using Microsoft.AspNetCore.Mvc;
 using Model.Domain;
-using System.Collections.Concurrent;
+using Model.Event;
+using Repository;
+using System.Threading.Channels;
 
 namespace TradingPlatformAPI.Controllers
 {
@@ -8,7 +11,29 @@ namespace TradingPlatformAPI.Controllers
     [ApiController]
     public class AccountController : ControllerBase
     {
-        private static readonly ConcurrentDictionary<string, Account> Accounts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly IAccountRepository _accountRepository;
+        private readonly IEventBus _eventBus;
+
+        public AccountController(IAccountRepository accountRepository, IEventBus eventBus)
+        {
+            _accountRepository = accountRepository;
+            _eventBus = eventBus;
+        }
+
+        private class ChannelEventHandler : IEventHandler<AccountUpdateEvent>
+        {
+            private readonly ChannelWriter<AccountUpdateEvent> _writer;
+
+            public ChannelEventHandler(ChannelWriter<AccountUpdateEvent> writer)
+            {
+                _writer = writer;
+            }
+
+            public async Task HandleAsync(AccountUpdateEvent @event, CancellationToken cancellationToken = default)
+            {
+                await _writer.WriteAsync(@event, cancellationToken);
+            }
+        }
 
         [HttpPost]
         public IActionResult CreateAccount([FromBody] CreateAccountRequest? request)
@@ -36,7 +61,7 @@ namespace TradingPlatformAPI.Controllers
                 Holdings = new List<Holding>()
             };
 
-            if (!Accounts.TryAdd(account.Username, account))
+            if (!_accountRepository.TryAdd(account))
             {
                 return Conflict($"Account '{account.Username}' already exists.");
             }
@@ -47,34 +72,40 @@ namespace TradingPlatformAPI.Controllers
         [HttpGet("stream/{username}")]
         public async Task<IActionResult> StreamAccount(string username, CancellationToken cancellationToken)
         {
-            if (!Accounts.TryGetValue(username, out var account))
+            if (!_accountRepository.TryGet(username, out var account))
             {
                 return NotFound();
             }
 
             Response.ContentType = "text/event-stream";
-            var random = new Random();
+
+            await Response.WriteAsJsonAsync(account, cancellationToken);
+            await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+
+            var channel = Channel.CreateUnbounded<AccountUpdateEvent>();
+            var handler = new ChannelEventHandler(channel.Writer);
+            
+            _eventBus.Subscribe(handler);
 
             try
             {
-                while (!cancellationToken.IsCancellationRequested)
+                await foreach (var accountUpdate in channel.Reader.ReadAllAsync(cancellationToken))
                 {
-                    var accountUpdate = new Account
+                    if (string.Equals(accountUpdate.Username, username, StringComparison.OrdinalIgnoreCase))
                     {
-                        Username = account.Username,
-                        AvailableBalance = account.AvailableBalance + random.Next(-10, 10),
-                        TotalBalance = account.TotalBalance,
-                        Holdings = account.Holdings
-                    };
-
-                    Accounts[username] = accountUpdate;
-                    await Response.WriteAsJsonAsync(accountUpdate, cancellationToken);
-                    await Response.Body.FlushAsync(cancellationToken);
-                    await Task.Delay(3000, cancellationToken);
+                        await Response.WriteAsJsonAsync(accountUpdate, cancellationToken);
+                        await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
+                        await Response.Body.FlushAsync(cancellationToken);
+                    }
                 }
             }
             catch (OperationCanceledException)
             {
+            }
+            finally
+            {
+                _eventBus.Unsubscribe(handler);
             }
 
             return new EmptyResult();

@@ -1,7 +1,7 @@
-using Infrastructure;
+using Infrastructure.Queue;
 using Microsoft.Extensions.Options;
 using Model.Config;
-using Model.Domain;
+using Model.Request;
 using Serializer;
 using System.Collections.Concurrent;
 using System.Net;
@@ -15,15 +15,18 @@ namespace OrderGateway
         private readonly ILogger<OrderGatewayService> _logger;
         private readonly OrderGatewayConfig _options;
         private readonly IMessageSerializer _serializer;
-        private readonly IProducerQueueSystem<GatewayRequest> _producerQueueSystem;
+        private readonly IPartitionedMPSCQueueSystem<GatewayRequest> _requestOutQueue;
         private readonly ConcurrentDictionary<string, ConnectionSession> _sessionsByConnectionId = new();
 
-        public OrderGatewayService(ILogger<OrderGatewayService> logger, IOptions<OrderGatewayConfig> options, IProducerQueueSystem<GatewayRequest> producerQueueSystem)
+        public OrderGatewayService(
+            ILogger<OrderGatewayService> logger,
+            IOptions<OrderGatewayConfig> options,
+            [FromKeyedServices("AccountShardQueue1")] IPartitionedMPSCQueueSystem<GatewayRequest> requestOutQueue)
         {
             _logger = logger;
             _options = options.Value;
             _serializer = new MessageSerializer(_options.SerializerLengthPrefixBytes);
-            _producerQueueSystem = producerQueueSystem;
+            _requestOutQueue = requestOutQueue;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -40,17 +43,9 @@ namespace OrderGateway
                     var tcpClient = await listener.AcceptTcpClientAsync(stoppingToken);
                     var connectionId = Guid.NewGuid().ToString("N");
 
-                    if (!_producerQueueSystem.TryRegisterProducer(connectionId, out var queue))
-                    {
-                        _logger.LogWarning("Failed to register producer queue for connection {ConnectionId}", connectionId);
-                        tcpClient.Dispose();
-                        continue;
-                    }
-
                     var session = new ConnectionSession(
                         connectionId,
-                        tcpClient,
-                        queue);
+                        tcpClient);
 
                     _sessionsByConnectionId[connectionId] = session;
 
@@ -91,10 +86,22 @@ namespace OrderGateway
                         session.AccountKey = accountKey;
                     }
 
-                    while (!session.Queue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
+                    if (session.Queue == null && !string.IsNullOrWhiteSpace(session.AccountKey))
                     {
-                        await Task.Delay(1, cancellationToken);
+                        if (_requestOutQueue.TryGetQueue(session.AccountKey, out var queue) && queue != null)
+                        {
+                            session.Queue = queue;
+                        }
                     }
+
+                    if (session.Queue == null)
+                    {
+                        _logger.LogWarning("Cannot enqueue request for connection {ConnectionId} because account key is unknown or invalid", session.ConnectionId);
+                        break;
+                    }
+
+                    while (!session.Queue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
+                        await Task.Delay(1, cancellationToken);
                 }
             }
             catch (OperationCanceledException)
@@ -112,7 +119,6 @@ namespace OrderGateway
             finally
             {
                 _sessionsByConnectionId.TryRemove(session.ConnectionId, out _);
-                _producerQueueSystem.UnregisterProducer(session.ConnectionId);
                 session.Client.Dispose();
                 _logger.LogInformation("Disconnected connection {ConnectionId} account {AccountKey}", session.ConnectionId, session.AccountKey ?? "unknown");
             }
@@ -173,16 +179,15 @@ namespace OrderGateway
 
         private sealed class ConnectionSession
         {
-            public ConnectionSession(string connectionId, TcpClient client, SPSCQueue<GatewayRequest> queue)
+            public ConnectionSession(string connectionId, TcpClient client)
             {
                 ConnectionId = connectionId;
                 Client = client;
-                Queue = queue;
             }
 
             public string ConnectionId { get; }
             public TcpClient Client { get; }
-            public SPSCQueue<GatewayRequest> Queue { get; }
+            public MPSCQueue<GatewayRequest>? Queue { get; set; }
             public string? AccountKey { get; set; }
         }
     }

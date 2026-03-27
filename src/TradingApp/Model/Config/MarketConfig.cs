@@ -2,7 +2,7 @@
 
 namespace Model.Config
 {
-    public class MarketConfig
+    public sealed record MarketConfig
     {
         public List<Instrument> Instruments { get; set; } = new();
     }

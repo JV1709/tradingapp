@@ -42,13 +42,26 @@ builder.Services.AddKeyedSingleton<IPartitionedSPSCQueueSystem<Order>>("AccountS
     var config = sp.GetRequiredService<IOptions<ParallelismConfig>>().Value;
     return new PartitionedSPSCQueueSystem<Order>(Enumerable.Range(0, config.PartitionCount).Select(x => x.ToString()));
 });
-builder.Services.AddKeyedSingleton<IPartitionedMPSCQueueSystem<GatewayRequest>>("InstrumentQueue", (sp, key) =>
+builder.Services.AddKeyedSingleton<IPartitionedMPSCQueueSystem<Order>>("InstrumentQueue", (sp, key) =>
 {
     var config = sp.GetRequiredService<IOptions<MarketConfig>>().Value;
-    return new PartitionedMPSCQueueSystem<GatewayRequest>(config.Instruments.Select(i => i.Symbol));
+    return new PartitionedMPSCQueueSystem<Order>(config.Instruments.Select(i => i.Symbol));
+});
+builder.Services.AddKeyedSingleton<IPartitionedMPSCQueueSystem<CancelOrderRequest>>("CancelQueue", (sp, key) =>
+{
+    var config = sp.GetRequiredService<IOptions<MarketConfig>>().Value;
+    return new PartitionedMPSCQueueSystem<CancelOrderRequest>(config.Instruments.Select(i => i.Symbol));
+});
+builder.Services.AddKeyedSingleton<IPartitionedMPSCQueueSystem<MatchingEngineCommand>>("AggregatedCommandQueue", (sp, key) =>
+{
+    var config = sp.GetRequiredService<IOptions<MarketConfig>>().Value;
+    return new PartitionedMPSCQueueSystem<MatchingEngineCommand>(config.Instruments.Select(i => i.Symbol));
 });
 builder.Services.AddSingleton<IRiskManagementConsumerFactory, RiskManagementConsumerFactory>();
 builder.Services.AddSingleton<IOrderQueueConsumerFactory, OrderQueueConsumerFactory>();
+builder.Services.AddSingleton<IOrderBookFactory, OrderBookFactory>();
+builder.Services.AddSingleton<ISystemAggregatorConsumerFactory, SystemAggregatorConsumerFactory>();
+builder.Services.AddSingleton<IOrderBookConsumerFactory, OrderBookConsumerFactory>();
 
 builder.Services.AddHostedService<OrderGatewayService>();
 builder.Services.AddHostedService<OrderManagementService>();

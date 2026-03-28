@@ -1,4 +1,4 @@
-﻿using Infrastructure.Queue;
+using Infrastructure.Queue;
 using Model.Domain;
 using Model.Request;
 using Repository;
@@ -16,17 +16,20 @@ namespace OrderManagementSystem
         private readonly IOrderRepository _orderRepository;
         private readonly IPartitionedMPSCQueueSystem<GatewayRequest> _requestInQueue;
         private readonly IPartitionedSPSCQueueSystem<Order> _orderOutQueue;
+        private readonly IPartitionedMPSCQueueSystem<CancelOrderRequest> _cancelOutQueue;
 
         public OrderQueueConsumerFactory(
             ILoggerFactory loggerFactory,
             IOrderRepository orderRepository,
             [FromKeyedServices("AccountShardQueue1")] IPartitionedMPSCQueueSystem<GatewayRequest> requestInQueue,
-            [FromKeyedServices("AccountShardQueue2")] IPartitionedSPSCQueueSystem<Order> orderOutQueue)
+            [FromKeyedServices("AccountShardQueue2")] IPartitionedSPSCQueueSystem<Order> orderOutQueue,
+            [FromKeyedServices("CancelQueue")] IPartitionedMPSCQueueSystem<CancelOrderRequest> cancelOutQueue)
         {
             _loggerFactory = loggerFactory;
             _orderRepository = orderRepository;
             _requestInQueue = requestInQueue;
             _orderOutQueue = orderOutQueue;
+            _cancelOutQueue = cancelOutQueue;
         }
 
         public OrderQueueConsumer Create(string symbol)
@@ -36,6 +39,7 @@ namespace OrderManagementSystem
                 _orderRepository,
                 _requestInQueue.GetQueue(symbol),
                 _orderOutQueue.GetQueue(symbol),
+                _cancelOutQueue.GetQueue(symbol),
                 _loggerFactory.CreateLogger<OrderQueueConsumer>());
         }
     }
@@ -46,6 +50,7 @@ namespace OrderManagementSystem
         private readonly IOrderRepository _orderRepository;
         private readonly MPSCQueue<GatewayRequest> _requestQueue;
         private readonly SPSCQueue<Order> _orderOutQueue;
+        private readonly MPSCQueue<CancelOrderRequest> _cancelOutQueue;
         private readonly ILogger<OrderQueueConsumer> _logger;
 
         private Task? _executingTask;
@@ -56,12 +61,14 @@ namespace OrderManagementSystem
             IOrderRepository orderRepository,
             MPSCQueue<GatewayRequest> requestQueue,
             SPSCQueue<Order> orderOutQueue,
+            MPSCQueue<CancelOrderRequest> cancelOutQueue,
             ILogger<OrderQueueConsumer> logger)
         {
             _symbol = symbol;
             _orderRepository = orderRepository;
             _requestQueue = requestQueue;
             _orderOutQueue = orderOutQueue;
+            _cancelOutQueue = cancelOutQueue;
             _logger = logger;
         }
 
@@ -166,7 +173,8 @@ namespace OrderManagementSystem
         private void ProcessCancelOrderRequest(CancelOrderRequest request, CancellationToken cancellationToken)
         {
             _logger.LogInformation("Processing CancelOrder request for symbol {Symbol}: OrderId={OrderId}", _symbol, request.OrderId);
-            // Todo: Enqueue to matching engine for cancellation
+            while (!_cancelOutQueue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
+                Task.Delay(1, cancellationToken);
         }
     }
 }

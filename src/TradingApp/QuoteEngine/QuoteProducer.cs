@@ -1,24 +1,19 @@
 using Infrastructure.Event;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Model.Domain;
 using Model.Event;
 using Repository;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace QuoteEngine
 {
-    public class Worker : BackgroundService, IEventHandler<OrderMatchEvent>, IEventHandler<OrderAcceptedEvent>
+    public class QuoteProducer : BackgroundService, IEventHandler<OrderMatchEvent>, IEventHandler<OrderAcceptedEvent>
     {
-        private readonly ILogger<Worker> _logger;
+        private readonly ILogger<QuoteProducer> _logger;
         private readonly IEventBus _eventBus;
         private readonly IQuoteRepository _quoteRepository;
         private readonly IOrderRepository _orderRepository;
 
-        public Worker(
-            ILogger<Worker> logger,
+        public QuoteProducer(
+            ILogger<QuoteProducer> logger,
             IEventBus eventBus,
             IQuoteRepository quoteRepository,
             IOrderRepository orderRepository)

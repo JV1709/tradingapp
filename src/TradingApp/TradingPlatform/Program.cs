@@ -7,6 +7,7 @@ using Model.Domain;
 using Model.Request;
 using OrderGateway;
 using OrderManagementSystem;
+using QuoteEngine;
 using Repository;
 using RiskManagementSystem;
 
@@ -67,6 +68,7 @@ builder.Services.AddHostedService<OrderGatewayService>();
 builder.Services.AddHostedService<OrderManagementService>();
 builder.Services.AddHostedService<RiskManagementService>();
 builder.Services.AddHostedService<MatchingEngineService>();
+builder.Services.AddHostedService<QuoteProducer>();
 
 var app = builder.Build();
 

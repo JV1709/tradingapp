@@ -2,6 +2,13 @@
 
 namespace Infrastructure.Queue
 {
+    [StructLayout(LayoutKind.Explicit, Size = 192)]
+    internal struct PaddedPosition
+    {
+        [FieldOffset(64)]
+        public volatile int Value;
+    }
+
     /// <summary>
     /// A bounded, lock-free Single-Producer Single-Consumer (SPSC) ring buffer queue.
     /// </summary>
@@ -9,14 +16,6 @@ namespace Infrastructure.Queue
     {
         private readonly T[] _buffer;
         private readonly int _mask;
-
-        // Padded to prevent false sharing between head and tail pointers
-        [StructLayout(LayoutKind.Explicit, Size = 192)]
-        private struct PaddedPosition
-        {
-            [FieldOffset(64)]
-            public volatile int Value;
-        }
 
         private PaddedPosition _head;
         private PaddedPosition _tail;

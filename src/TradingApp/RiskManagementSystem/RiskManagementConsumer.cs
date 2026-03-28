@@ -39,7 +39,7 @@ namespace RiskManagementSystem
             return new RiskManagementConsumer(
                 partitionId,
                 _orderInQueue.GetQueue(partitionIdStr),
-                _orderOutQueue.GetQueue(partitionIdStr),
+                _orderOutQueue,
                 _accountRepository, 
                 _eventBus,
                 _loggerFactory.CreateLogger<RiskManagementConsumer>());
@@ -50,7 +50,7 @@ namespace RiskManagementSystem
     {
         private readonly int _partitionId;
         private readonly SPSCQueue<Order> _orderInQueue;
-        private readonly MPSCQueue<Order> _orderOutQueue;
+        private readonly IPartitionedMPSCQueueSystem<Order> _orderOutQueue;
         private readonly IAccountRepository _accountRepository;
         private readonly IEventBus _eventBus;
         private readonly ILogger<RiskManagementConsumer> _logger;
@@ -61,7 +61,7 @@ namespace RiskManagementSystem
         public RiskManagementConsumer(
             int partitionId,
             SPSCQueue<Order> orderInQueue,
-            MPSCQueue<Order> orderOutQueue,
+            IPartitionedMPSCQueueSystem<Order> orderOutQueue,
             IAccountRepository accountRepository,
             IEventBus eventBus,
             ILogger<RiskManagementConsumer> logger)
@@ -131,7 +131,8 @@ namespace RiskManagementSystem
                             continue;
                         }
 
-                        _orderOutQueue.TryEnqueue(order);
+                        var queue = _orderOutQueue.GetQueue(order.Symbol);
+                        queue.TryEnqueue(order);
                         _logger.LogInformation("Order enqueued to output queue for partition: {PartitionId}", _partitionId);
                     }
                     else

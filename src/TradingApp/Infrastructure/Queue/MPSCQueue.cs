@@ -8,13 +8,6 @@ namespace Infrastructure.Queue
     /// </summary>
     public class MPSCQueue<T> where T : class
     {
-        [StructLayout(LayoutKind.Explicit, Size = 192)]
-        private struct PaddedPosition
-        {
-            [FieldOffset(64)]
-            public volatile int Value;
-        }
-
         private struct Cell
         {
             public volatile int Sequence;

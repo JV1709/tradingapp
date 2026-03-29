@@ -1,5 +1,3 @@
-using System;
-
 namespace Model.Event
 {
     public record OrderAcceptedEvent : EventBase

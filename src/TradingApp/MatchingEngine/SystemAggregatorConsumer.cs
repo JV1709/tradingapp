@@ -1,5 +1,4 @@
 using Infrastructure.Queue;
-using Microsoft.Extensions.Logging;
 using Model.Domain;
 using Model.Request;
 
@@ -19,9 +18,9 @@ namespace MatchingEngine
 
         public SystemAggregatorConsumerFactory(
             ILoggerFactory loggerFactory,
-            [Microsoft.Extensions.DependencyInjection.FromKeyedServices("CancelQueue")] IPartitionedMPSCQueueSystem<CancelOrderRequest> cancelInQueue,
-            [Microsoft.Extensions.DependencyInjection.FromKeyedServices("InstrumentQueue")] IPartitionedMPSCQueueSystem<Order> orderInQueue,
-            [Microsoft.Extensions.DependencyInjection.FromKeyedServices("AggregatedCommandQueue")] IPartitionedMPSCQueueSystem<MatchingEngineCommand> commandOutQueue)
+            [FromKeyedServices("CancelQueue")] IPartitionedMPSCQueueSystem<CancelOrderRequest> cancelInQueue,
+            [FromKeyedServices("InstrumentQueue")] IPartitionedMPSCQueueSystem<Order> orderInQueue,
+            [FromKeyedServices("AggregatedCommandQueue")] IPartitionedMPSCQueueSystem<MatchingEngineCommand> commandOutQueue)
         {
             _loggerFactory = loggerFactory;
             _cancelInQueue = cancelInQueue;
@@ -67,6 +66,7 @@ namespace MatchingEngine
 
         public virtual Task StartAsync(CancellationToken cancellationToken)
         {
+            _logger.LogInformation("SystemAggregatorConsumer for {Symbol} starting...", _symbol);
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _executingTask = ExecuteAsync(_cts.Token);
 
@@ -78,6 +78,7 @@ namespace MatchingEngine
 
         public virtual async Task StopAsync(CancellationToken cancellationToken)
         {
+            _logger.LogInformation("SystemAggregatorConsumer stopping...");
             if (_executingTask == null) return;
             try
             {
@@ -97,8 +98,9 @@ namespace MatchingEngine
 
         protected virtual Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            return Task.Run(() =>
+            return Task.Run(async () =>
             {
+                _logger.LogInformation("SystemAggregatorConsumer execution loop started.");
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     bool workDone = false;
@@ -106,15 +108,23 @@ namespace MatchingEngine
                     // Round-robin polling: Cancel queue gets slight priority/even turn
                     if (_cancelInQueue.TryDequeue(out var cancelReq))
                     {
+                        _logger.LogInformation("Dequeued CancelOrderRequest for OrderId {OrderId} from CancelQueue.", cancelReq.OrderId);
                         var cmd = MatchingEngineCommand.CreateCancelOrder(cancelReq);
-                        _commandOutQueue.TryEnqueue(cmd);
+                        while (!_commandOutQueue.TryEnqueue(cmd) && !stoppingToken.IsCancellationRequested)
+                            await Task.Delay(1, stoppingToken);
+                        _logger.LogInformation("Enqueued MatchingEngineCommand for CancelOrderRequest of OrderId {OrderId} to AggregatedCommandQueue.", cancelReq.OrderId);
+
                         workDone = true;
                     }
 
                     if (_orderInQueue.TryDequeue(out var order))
                     {
+                        _logger.LogInformation("Dequeued Order {OrderId} from InstrumentQueue.", order.OrderId);
                         var cmd = MatchingEngineCommand.CreateAddOrder(order);
-                        _commandOutQueue.TryEnqueue(cmd);
+                        while (!_commandOutQueue.TryEnqueue(cmd) && !stoppingToken.IsCancellationRequested)
+                            await Task.Delay(1, stoppingToken);
+                        _logger.LogInformation("Enqueued MatchingEngineCommand for OrderId {OrderId} to AggregatedCommandQueue.", order.OrderId);
+
                         workDone = true;
                     }
 
@@ -123,6 +133,7 @@ namespace MatchingEngine
                         Thread.Yield(); // Prevent starvation/tight loop burnout
                     }
                 }
+                _logger.LogInformation("SystemAggregatorConsumer execution loop finished.");
             }, stoppingToken);
         }
     }

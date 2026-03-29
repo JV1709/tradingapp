@@ -1,20 +1,19 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Model.Config;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using Model.Event;
+using Model.Domain;
+using Infrastructure.Event;
 
 namespace MatchingEngine
 {
-    public class MatchingEngineService : BackgroundService
+    public class MatchingEngineService : BackgroundService, IEventHandler<OrderUpdateEvent>
     {
         private readonly ILogger<MatchingEngineService> _logger;
         private readonly MarketConfig _marketConfig;
         private readonly ISystemAggregatorConsumerFactory _aggregatorFactory;
         private readonly IOrderBookConsumerFactory _orderBookConsumerFactory;
+        private readonly IOrderBookFactory _orderBookFactory;
+        private readonly IEventBus _eventBus;
 
         private readonly List<SystemAggregatorConsumer> _aggregators = new();
         private readonly List<OrderBookConsumer> _orderBookConsumers = new();
@@ -23,12 +22,18 @@ namespace MatchingEngine
             ILogger<MatchingEngineService> logger,
             IOptions<MarketConfig> marketConfig,
             ISystemAggregatorConsumerFactory aggregatorFactory,
-            IOrderBookConsumerFactory orderBookConsumerFactory)
+            IOrderBookConsumerFactory orderBookConsumerFactory,
+            IOrderBookFactory orderBookFactory,
+            IEventBus eventBus)
         {
             _logger = logger;
             _marketConfig = marketConfig.Value;
             _aggregatorFactory = aggregatorFactory;
             _orderBookConsumerFactory = orderBookConsumerFactory;
+            _orderBookFactory = orderBookFactory;
+            _eventBus = eventBus;
+
+            _eventBus.Subscribe(this);
         }
 
         public override async Task StartAsync(CancellationToken cancellationToken)
@@ -56,14 +61,16 @@ namespace MatchingEngine
         {
             _logger.LogInformation("Stopping MatchingEngineService...");
 
+            _eventBus.Unsubscribe(this);
+
             var stopTasks = _aggregators.Select(x => x.StopAsync(cancellationToken))
                 .Concat(_orderBookConsumers.Select(x => x.StopAsync(cancellationToken)));
-                
+
             await Task.WhenAll(stopTasks);
-            
+
             _aggregators.ForEach(x => x.Dispose());
             _orderBookConsumers.ForEach(x => x.Dispose());
-            
+
             _aggregators.Clear();
             _orderBookConsumers.Clear();
 
@@ -72,6 +79,16 @@ namespace MatchingEngine
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            return Task.CompletedTask;
+        }
+
+        public Task HandleAsync(OrderUpdateEvent @event, CancellationToken cancellationToken = default)
+        {
+            if (@event.Order.Status == OrderStatus.Filled)
+            {
+                var book = _orderBookFactory.GetOrderBook(@event.Order.Symbol);
+                book.RemoveFromCancellationCache(@event.Order.OrderId);
+            }
             return Task.CompletedTask;
         }
     }

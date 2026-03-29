@@ -7,11 +7,11 @@ namespace TradingPlatform.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class InstrumentController : ControllerBase
+    public class InstrumentsController : ControllerBase
     {
         private readonly MarketConfig _config;
 
-        public InstrumentController(IOptions<MarketConfig> config)
+        public InstrumentsController(IOptions<MarketConfig> config)
         {
             _config = config.Value;
         }

@@ -1,6 +1,8 @@
 using Infrastructure.Event;
 using Infrastructure.Queue;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Model.Config;
 using Model.Domain;
 using Model.Event;
 using Model.Request;
@@ -20,15 +22,19 @@ namespace OrderGateway.Tests
             IOrderRepository? orderRepo = null,
             IEventBus? eventBus = null)
         {
+            var config = Options.Create(new ParallelismConfig { PartitionCount = 1 });
             return new OrderGatewayService(
                 NullLogger<OrderGatewayService>.Instance,
                 queueSystem,
                 orderRepo ?? Mock.Of<IOrderRepository>(r => r.GetByAccountKey(It.IsAny<string>()) == new List<Order>()),
-                eventBus ?? Mock.Of<IEventBus>());
+                eventBus ?? Mock.Of<IEventBus>(),
+                config);
         }
 
+        private static string GetPartitionKey(string account) => (Math.Abs(account.GetHashCode()) % 1).ToString();
+
         private static PartitionedMPSCQueueSystem<GatewayRequest> QueueWithKey(string key) =>
-            new PartitionedMPSCQueueSystem<GatewayRequest>(new[] { key });
+            new PartitionedMPSCQueueSystem<GatewayRequest>(new[] { GetPartitionKey(key) });
 
         private static Order MakeOrder(string accountKey) => new Order
         {
@@ -79,7 +85,7 @@ namespace OrderGateway.Tests
 
             await service.ProcessWebSocketSessionAsync(ws, account, CancellationToken.None);
 
-            queueSystem.TryGetQueue(account, out var queue);
+            queueSystem.TryGetQueue(GetPartitionKey(account), out var queue);
             Assert.True(queue!.TryDequeue(out var item));
             Assert.Equal(GatewayRequestType.PlaceOrder, item.Type);
             Assert.Equal(account, item.PlaceOrderRequest!.AccountKey);
@@ -101,7 +107,7 @@ namespace OrderGateway.Tests
 
             await service.ProcessWebSocketSessionAsync(ws, account, CancellationToken.None);
 
-            queueSystem.TryGetQueue(account, out var queue);
+            queueSystem.TryGetQueue(GetPartitionKey(account), out var queue);
             Assert.True(queue!.TryDequeue(out var item));
             Assert.Equal(GatewayRequestType.CancelOrder, item.Type);
             Assert.Equal(cancelRequest.OrderId, item.CancelOrderRequest!.OrderId);
@@ -124,7 +130,7 @@ namespace OrderGateway.Tests
 
             await service.ProcessWebSocketSessionAsync(ws, account, CancellationToken.None);
 
-            queueSystem.TryGetQueue(account, out var queue);
+            queueSystem.TryGetQueue(GetPartitionKey(account), out var queue);
             Assert.True(queue!.TryDequeue(out var item1));
             Assert.Equal("AAPL", item1.PlaceOrderRequest!.Symbol);
             Assert.True(queue.TryDequeue(out var item2));
@@ -153,7 +159,7 @@ namespace OrderGateway.Tests
 
             await service.ProcessWebSocketSessionAsync(ws, account, CancellationToken.None);
 
-            queueSystem.TryGetQueue(account, out var queue);
+            queueSystem.TryGetQueue(GetPartitionKey(account), out var queue);
             Assert.False(queue!.TryDequeue(out _));
         }
 

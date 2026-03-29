@@ -15,7 +15,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = null; // PascalCase to match domain models and WebSocket events
+    });
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -23,6 +27,16 @@ builder.Services.AddLogging(config =>
 {
     config.AddConsole();
     config.SetMinimumLevel(LogLevel.Information);
+});
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
 });
 
 builder.Services.Configure<OrderGatewayConfig>(builder.Configuration.GetSection(nameof(OrderGatewayConfig)));
@@ -79,12 +93,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 app.UseWebSockets();
 
 app.UseAuthorization();
-
+app.UseCors("AllowAll");
 app.MapControllers();
 
 app.Run();

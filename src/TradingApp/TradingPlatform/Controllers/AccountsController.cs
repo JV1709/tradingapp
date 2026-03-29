@@ -9,12 +9,12 @@ namespace TradingPlatformAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AccountController : ControllerBase
+    public class AccountsController : ControllerBase
     {
         private readonly IAccountRepository _accountRepository;
         private readonly IEventBus _eventBus;
 
-        public AccountController(IAccountRepository accountRepository, IEventBus eventBus)
+        public AccountsController(IAccountRepository accountRepository, IEventBus eventBus)
         {
             _accountRepository = accountRepository;
             _eventBus = eventBus;
@@ -79,8 +79,8 @@ namespace TradingPlatformAPI.Controllers
 
             Response.ContentType = "text/event-stream";
 
-            await Response.WriteAsJsonAsync(account, cancellationToken);
-            await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
+            var initialJson = System.Text.Json.JsonSerializer.Serialize(account);
+            await Response.WriteAsync(initialJson + '\n', cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
 
             var channel = Channel.CreateUnbounded<AccountUpdateEvent>();
@@ -90,13 +90,17 @@ namespace TradingPlatformAPI.Controllers
 
             try
             {
-                await foreach (var accountUpdate in channel.Reader.ReadAllAsync(cancellationToken))
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    if (string.Equals(accountUpdate.Username, username, StringComparison.OrdinalIgnoreCase))
+                    if (channel.Reader.TryRead(out var updateEvent) && string.Equals(updateEvent.Username, username, StringComparison.OrdinalIgnoreCase))
                     {
-                        await Response.WriteAsJsonAsync(accountUpdate, cancellationToken);
-                        await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
+                        var json = System.Text.Json.JsonSerializer.Serialize(updateEvent);
+                        await Response.WriteAsync(json + '\n', cancellationToken);
                         await Response.Body.FlushAsync(cancellationToken);
+                    }
+                    else
+                    {
+                        await Task.Delay(100, cancellationToken);
                     }
                 }
             }

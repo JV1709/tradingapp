@@ -3,6 +3,7 @@ using Infrastructure.Queue;
 using Model.Domain;
 using Model.Event;
 using Repository;
+using System.Threading;
 
 namespace RiskManagementSystem
 {
@@ -113,7 +114,7 @@ namespace RiskManagementSystem
 
         protected virtual Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            return Task.Run(() =>
+            return Task.Run(async () =>
             {
                 while (!stoppingToken.IsCancellationRequested)
                 {
@@ -131,8 +132,22 @@ namespace RiskManagementSystem
                             continue;
                         }
 
+                        _accountRepository.TryGet(order.AccountKey, out var account);
+                        if (order.Side == Side.Buy)
+                            account.AvailableBalance -= order.Price * order.TotalQuantity;
+                        _accountRepository.AddOrUpdate(account);
+
+                        _eventBus.Publish(new AccountUpdateEvent
+                        {
+                            Username = account.Username,
+                            TotalBalance = account.TotalBalance,
+                            AvailableBalance = account.AvailableBalance,
+                            Holdings = account.Holdings
+                        });
+
                         var queue = _orderOutQueue.GetQueue(order.Symbol);
-                        queue.TryEnqueue(order);
+                        while (!queue.TryEnqueue(order) && !stoppingToken.IsCancellationRequested)
+                            await Task.Delay(1, stoppingToken);
                         _logger.LogInformation("Order enqueued to output queue for partition: {PartitionId}", _partitionId);
                     }
                     else

@@ -5,11 +5,11 @@ namespace TradingPlatformAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class OrderController : ControllerBase
+    public class OrdersController : ControllerBase
     {
         private readonly OrderGatewayService _orderGatewayService;
 
-        public OrderController(OrderGatewayService orderGatewayService)
+        public OrdersController(OrderGatewayService orderGatewayService)
         {
             _orderGatewayService = orderGatewayService;
         }

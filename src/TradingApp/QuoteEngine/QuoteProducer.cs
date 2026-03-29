@@ -48,7 +48,7 @@ namespace QuoteEngine
 
         public Task HandleAsync(OrderMatchEvent @event, CancellationToken cancellationToken = default)
         {
-            var orderId = @event.OrderId;
+            var orderId = @event.BuyOrderId; // Get symbol from buy order, since both have same symbol
             if (_orderRepository.TryGet(orderId, out var order))
             {
                 if (!_quoteRepository.TryGet(order.Symbol, out var quote))
@@ -56,7 +56,9 @@ namespace QuoteEngine
                     quote = new Quote { Symbol = order.Symbol };
                 }
 
-                quote.LastDonePrice = @event.Price;
+                quote.AskPrice = @event.AskPrice;
+                quote.BidPrice = @event.BidPrice;
+                quote.LastDonePrice = @event.FillPrice;
                 quote.Timestamp = DateTime.UtcNow;
 
                 _quoteRepository.AddOrUpdate(quote);
@@ -79,17 +81,17 @@ namespace QuoteEngine
                     quote = new Quote { Symbol = order.Symbol };
                 }
 
-                if (order.Side == Side.Buy)
+                if (order.Side == Side.Buy && (quote.BidPrice == null || order.Price > quote.BidPrice))
                 {
                     quote.BidPrice = order.Price;
                 }
-                else if (order.Side == Side.Sell)
+                
+                if (order.Side == Side.Sell && (quote.AskPrice == null || order.Price < quote.AskPrice))
                 {
                     quote.AskPrice = order.Price;
                 }
 
                 quote.Timestamp = DateTime.UtcNow;
-
                 _quoteRepository.AddOrUpdate(quote);
 
                 _eventBus.Publish(new NewQuoteEvent { Quote = quote });

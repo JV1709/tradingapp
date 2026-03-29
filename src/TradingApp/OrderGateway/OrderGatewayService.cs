@@ -2,6 +2,8 @@ using Infrastructure.Event;
 using Infrastructure.Queue;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Model.Config;
 using Model.Domain;
 using Model.Event;
 using Model.Request;
@@ -19,17 +21,20 @@ namespace OrderGateway
         private readonly IPartitionedMPSCQueueSystem<GatewayRequest> _requestOutQueue;
         private readonly IOrderRepository _orderRepository;
         private readonly IEventBus _eventBus;
+        private readonly int _partitionCount;
 
         public OrderGatewayService(
             ILogger<OrderGatewayService> logger,
             [FromKeyedServices("AccountShardQueue1")] IPartitionedMPSCQueueSystem<GatewayRequest> requestOutQueue,
             IOrderRepository orderRepository,
-            IEventBus eventBus)
+            IEventBus eventBus,
+            IOptions<ParallelismConfig> config)
         {
             _logger = logger;
             _requestOutQueue = requestOutQueue;
             _orderRepository = orderRepository;
             _eventBus = eventBus;
+            _partitionCount = config.Value.PartitionCount;
         }
 
         private class ChannelEventHandler : IEventHandler<OrderUpdateEvent>
@@ -51,7 +56,8 @@ namespace OrderGateway
         {
             _logger.LogInformation("WebSocket session started for account {AccountKey}", accountKey);
 
-            if (!_requestOutQueue.TryGetQueue(accountKey, out var queue) || queue == null)
+            var partitionIdStr = (Math.Abs(accountKey.GetHashCode()) % _partitionCount).ToString();
+            if (!_requestOutQueue.TryGetQueue(partitionIdStr, out var queue) || queue == null)
             {
                 _logger.LogWarning("Cannot accept WebSocket session for account {AccountKey} because queue is unknown or invalid", accountKey);
                 await webSocket.CloseAsync(WebSocketCloseStatus.InternalServerError, "Invalid account", CancellationToken.None);
@@ -129,9 +135,7 @@ namespace OrderGateway
                                 if (request != null)
                                 {
                                     while (!queue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
-                                    {
                                         await Task.Delay(1, cancellationToken);
-                                    }
                                 }
                                 else
                                 {

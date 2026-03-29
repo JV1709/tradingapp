@@ -27,28 +27,34 @@ namespace MatchingEngine
             _cancelledOrderIds.Add(orderId);
         }
 
-        public void AddOrder(Order order)
+        public void RemoveFromCancellationCache(Guid orderId)
+        {
+            _cancelledOrderIds.Remove(orderId);
+        }
+
+        public OrderMatch? AddOrder(Order order)
         {
             // First check if the incoming order itself was cancelled before it even arrived at the book
             if (_cancelledOrderIds.Contains(order.OrderId))
             {
                 _cancelledOrderIds.Remove(order.OrderId);
-                return;
+                return null;
             }
 
             if (order.Side == Side.Buy)
             {
-                MatchAndAdd(order, _asks, _bids);
+                return MatchAndAdd(order, _asks, _bids);
             }
             else
             {
-                MatchAndAdd(order, _bids, _asks);
+                return MatchAndAdd(order, _bids, _asks);
             }
         }
 
-        private void MatchAndAdd(Order takerOrder, SortedDictionary<decimal, PriceLevel> makerSide, SortedDictionary<decimal, PriceLevel> takerSide)
+        private OrderMatch? MatchAndAdd(Order takerOrder, SortedDictionary<decimal, PriceLevel> makerSide, SortedDictionary<decimal, PriceLevel> takerSide)
         {
             bool isBuy = takerOrder.Side == Side.Buy;
+            OrderMatch? matchOccurred = null;
 
             while (takerOrder.FilledQuantity < takerOrder.TotalQuantity && makerSide.Count > 0)
             {
@@ -78,6 +84,17 @@ namespace MatchingEngine
                     long takerRemaining = takerOrder.TotalQuantity - takerOrder.FilledQuantity;
 
                     long fillQuantity = Math.Min(makerRemaining, takerRemaining);
+
+                    if (fillQuantity > 0)
+                    {
+                        matchOccurred = new OrderMatch
+                        {
+                            TakerOrderId = takerOrder.OrderId,
+                            MakerOrderId = makerOrder.OrderId,
+                            Price = bestPrice,
+                            Quantity = (int)fillQuantity
+                        };
+                    }
 
                     makerOrder.FilledQuantity += fillQuantity;
                     takerOrder.FilledQuantity += fillQuantity;
@@ -127,8 +144,19 @@ namespace MatchingEngine
             {
                 takerOrder.Status = OrderStatus.Cancelled;
             }
+
+            if (matchOccurred != null)
+            {
+                matchOccurred = matchOccurred with
+                {
+                    BidPrice = BestBid,
+                    AskPrice = BestAsk
+                };
+            }
+
+            return matchOccurred;
         }
-        
+
         // Properties to help test
         public int AsksCount => _asks.Count;
         public int BidsCount => _bids.Count;

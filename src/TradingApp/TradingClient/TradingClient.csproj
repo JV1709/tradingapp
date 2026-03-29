@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Model\Model.csproj" />
-    <ProjectReference Include="..\Serializer\Serializer.csproj" />
   </ItemGroup>
 
 </Project>

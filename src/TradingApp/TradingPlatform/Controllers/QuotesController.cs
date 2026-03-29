@@ -2,6 +2,7 @@
 using Infrastructure.Event;
 using Model.Domain;
 using Model.Event;
+using System.Text.Json;
 using System.Threading.Channels;
 using Repository;
 
@@ -9,12 +10,12 @@ namespace TradingPlatformAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class QuoteController : ControllerBase
+    public class QuotesController : ControllerBase
     {
         private readonly IQuoteRepository _quoteRepository;
         private readonly IEventBus _eventBus;
 
-        public QuoteController(IQuoteRepository quoteRepository, IEventBus eventBus)
+        public QuotesController(IQuoteRepository quoteRepository, IEventBus eventBus)
         {
             _quoteRepository = quoteRepository;
             _eventBus = eventBus;
@@ -50,8 +51,8 @@ namespace TradingPlatformAPI.Controllers
                 };
             }
 
-            await Response.WriteAsJsonAsync(initialQuote, cancellationToken);
-            await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
+            var initialJson = JsonSerializer.Serialize(initialQuote);
+            await Response.WriteAsync(initialJson + '\n', cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
 
             var channel = Channel.CreateUnbounded<NewQuoteEvent>();
@@ -61,14 +62,15 @@ namespace TradingPlatformAPI.Controllers
 
             try
             {
-                await foreach (var newQuoteEvent in channel.Reader.ReadAllAsync(cancellationToken))
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    if (string.Equals(newQuoteEvent.Quote.Symbol, symbol, StringComparison.OrdinalIgnoreCase))
+                    if (channel.Reader.TryRead(out var newQuoteEvent) && string.Equals(newQuoteEvent.Quote.Symbol, symbol, StringComparison.OrdinalIgnoreCase))
                     {
                         var quote = newQuoteEvent.Quote;
-                        await Response.WriteAsJsonAsync(quote, cancellationToken);
-                        await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
+                        var json = JsonSerializer.Serialize(quote);
+                        await Response.WriteAsync(json + '\n', cancellationToken);
                         await Response.Body.FlushAsync(cancellationToken);
+
                     }
                 }
             }

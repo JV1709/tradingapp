@@ -48,7 +48,8 @@ namespace QuoteEngine
 
         public Task HandleAsync(OrderMatchEvent @event, CancellationToken cancellationToken = default)
         {
-            if (Guid.TryParse(@event.OrderId, out var orderId) && _orderRepository.TryGet(orderId, out var order))
+            var orderId = @event.OrderId;
+            if (_orderRepository.TryGet(orderId, out var order))
             {
                 if (!_quoteRepository.TryGet(order.Symbol, out var quote))
                 {
@@ -70,7 +71,8 @@ namespace QuoteEngine
 
         public Task HandleAsync(OrderAcceptedEvent @event, CancellationToken cancellationToken = default)
         {
-            if (Guid.TryParse(@event.OrderId, out var orderId) && _orderRepository.TryGet(orderId, out var order))
+            var orderId = @event.OrderId;
+            if (_orderRepository.TryGet(orderId, out var order))
             {
                 if (!_quoteRepository.TryGet(order.Symbol, out var quote))
                 {

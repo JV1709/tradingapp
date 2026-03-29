@@ -1,8 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Model.Event;
-using Infrastructure.Event;
-using System.Threading.Channels;
-using Repository;
+using Microsoft.AspNetCore.Mvc;
+using OrderGateway;
 
 namespace TradingPlatformAPI.Controllers
 {
@@ -10,69 +7,25 @@ namespace TradingPlatformAPI.Controllers
     [ApiController]
     public class OrderController : ControllerBase
     {
-        private readonly IOrderRepository _orderRepository;
-        private readonly IEventBus _eventBus;
+        private readonly OrderGatewayService _orderGatewayService;
 
-        public OrderController(IOrderRepository orderRepository, IEventBus eventBus)
+        public OrderController(OrderGatewayService orderGatewayService)
         {
-            _orderRepository = orderRepository;
-            _eventBus = eventBus;
+            _orderGatewayService = orderGatewayService;
         }
 
-        private class ChannelEventHandler : IEventHandler<OrderUpdateEvent>
+        [HttpGet("ws/{username}")]
+        public async Task SteamWebSocket(string username, CancellationToken cancellationToken)
         {
-            private readonly ChannelWriter<OrderUpdateEvent> _writer;
-
-            public ChannelEventHandler(ChannelWriter<OrderUpdateEvent> writer)
+            if (HttpContext.WebSockets.IsWebSocketRequest)
             {
-                _writer = writer;
+                using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
+                await _orderGatewayService.ProcessWebSocketSessionAsync(webSocket, username, cancellationToken);
             }
-
-            public async Task HandleAsync(OrderUpdateEvent @event, CancellationToken cancellationToken = default)
+            else
             {
-                await _writer.WriteAsync(@event, cancellationToken);
+                HttpContext.Response.StatusCode = 400;
             }
-        }
-
-        [HttpGet("stream/{username}")]
-        public async Task<IActionResult> StreamOrderUpdates(string username, CancellationToken cancellationToken)
-        {
-            Response.ContentType = "text/event-stream";
-
-            var initialOrders = _orderRepository.GetByAccountKey(username);
-            foreach (var order in initialOrders)
-            {
-                await Response.WriteAsJsonAsync(initialOrders, cancellationToken);
-                await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
-            }
-            await Response.Body.FlushAsync(cancellationToken);
-
-            var channel = Channel.CreateUnbounded<OrderUpdateEvent>();
-            var handler = new ChannelEventHandler(channel.Writer);
-            
-            _eventBus.Subscribe(handler);
-
-            try
-            {
-                await foreach (var orderUpdate in channel.Reader.ReadAllAsync(cancellationToken))
-                {
-                    if (orderUpdate.Order.AccountKey != username)
-                        continue;
-
-                    await Response.WriteAsJsonAsync(orderUpdate, cancellationToken);
-                    await Response.Body.WriteAsync(new byte[] { (byte)'\n' }, cancellationToken);
-                    await Response.Body.FlushAsync(cancellationToken);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Client disconnected or request was cancelled
-            }
-            finally
-            {
-                _eventBus.Unsubscribe(handler);
-            }
-            return new EmptyResult();
         }
     }
 }

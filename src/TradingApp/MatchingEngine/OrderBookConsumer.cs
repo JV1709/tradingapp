@@ -96,10 +96,8 @@ namespace MatchingEngine
                     {
                         if (command.IsCancel && command.CancelRequest != null)
                         {
-                            if (Guid.TryParse(command.CancelRequest.OrderId, out var orderId))
-                            {
-                                _orderBook.CancelOrder(orderId);
-                            }
+                            var orderId = command.CancelRequest.OrderId;
+                            _orderBook.CancelOrder(orderId);
                         }
                         else if (!command.IsCancel && command.Order != null)
                         {

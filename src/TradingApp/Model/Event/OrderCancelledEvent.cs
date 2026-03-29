@@ -1,7 +1,9 @@
-﻿namespace Model.Event
+using System;
+
+namespace Model.Event
 {
     public record OrderCancelledEvent : EventBase
     {
-        public required string OrderId { get; init; }
+        public required Guid OrderId { get; init; }
     }
 }

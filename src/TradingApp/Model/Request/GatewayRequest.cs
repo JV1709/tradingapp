@@ -1,4 +1,4 @@
-﻿using Model.Domain;
+using Model.Domain;
 
 namespace Model.Request
 {
@@ -46,6 +46,6 @@ namespace Model.Request
 
     public sealed class CancelOrderRequest
     {
-        public required string OrderId { get; set; }
+        public required Guid OrderId { get; set; }
     }
 }

@@ -1,194 +1,198 @@
+using Infrastructure.Event;
 using Infrastructure.Queue;
-using Microsoft.Extensions.Options;
-using Model.Config;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Model.Domain;
+using Model.Event;
 using Model.Request;
-using Serializer;
-using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Sockets;
+using Repository;
+using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace OrderGateway
 {
-    public sealed class OrderGatewayService : BackgroundService
+    public sealed class OrderGatewayService
     {
         private readonly ILogger<OrderGatewayService> _logger;
-        private readonly OrderGatewayConfig _options;
-        private readonly IMessageSerializer _serializer;
         private readonly IPartitionedMPSCQueueSystem<GatewayRequest> _requestOutQueue;
-        private readonly ConcurrentDictionary<string, ConnectionSession> _sessionsByConnectionId = new();
+        private readonly IOrderRepository _orderRepository;
+        private readonly IEventBus _eventBus;
 
         public OrderGatewayService(
             ILogger<OrderGatewayService> logger,
-            IOptions<OrderGatewayConfig> options,
-            [FromKeyedServices("AccountShardQueue1")] IPartitionedMPSCQueueSystem<GatewayRequest> requestOutQueue)
+            [FromKeyedServices("AccountShardQueue1")] IPartitionedMPSCQueueSystem<GatewayRequest> requestOutQueue,
+            IOrderRepository orderRepository,
+            IEventBus eventBus)
         {
             _logger = logger;
-            _options = options.Value;
-            _serializer = new MessageSerializer(_options.SerializerLengthPrefixBytes);
             _requestOutQueue = requestOutQueue;
+            _orderRepository = orderRepository;
+            _eventBus = eventBus;
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        private class ChannelEventHandler : IEventHandler<OrderUpdateEvent>
         {
-            var listener = new TcpListener(IPAddress.Any, _options.Port);
-            listener.Start();
+            private readonly ChannelWriter<OrderUpdateEvent> _writer;
 
-            _logger.LogInformation("OrderGateway listening for TCP clients on port {Port}", _options.Port);
-
-            try
+            public ChannelEventHandler(ChannelWriter<OrderUpdateEvent> writer)
             {
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    var tcpClient = await listener.AcceptTcpClientAsync(stoppingToken);
-                    var connectionId = Guid.NewGuid().ToString("N");
-
-                    var session = new ConnectionSession(
-                        connectionId,
-                        tcpClient);
-
-                    _sessionsByConnectionId[connectionId] = session;
-
-                    _ = Task.Run(() => ProcessConnectionAsync(session, stoppingToken), stoppingToken);
-                }
+                _writer = writer;
             }
-            catch (OperationCanceledException)
+
+            public async Task HandleAsync(OrderUpdateEvent @event, CancellationToken cancellationToken = default)
             {
-                // graceful shutdown
-            }
-            finally
-            {
-                listener.Stop();
+                await _writer.WriteAsync(@event, cancellationToken);
             }
         }
 
-        private async Task ProcessConnectionAsync(ConnectionSession session, CancellationToken cancellationToken)
+        public async Task ProcessWebSocketSessionAsync(WebSocket webSocket, string accountKey, CancellationToken cancellationToken)
         {
-            var remote = session.Client.Client.RemoteEndPoint?.ToString() ?? "unknown";
-            _logger.LogInformation("Accepted order connection {ConnectionId} from {Remote}", session.ConnectionId, remote);
+            _logger.LogInformation("WebSocket session started for account {AccountKey}", accountKey);
+
+            if (!_requestOutQueue.TryGetQueue(accountKey, out var queue) || queue == null)
+            {
+                _logger.LogWarning("Cannot accept WebSocket session for account {AccountKey} because queue is unknown or invalid", accountKey);
+                await webSocket.CloseAsync(WebSocketCloseStatus.InternalServerError, "Invalid account", CancellationToken.None);
+                return;
+            }
+
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var wsTask = Task.Run(() => ReadIncomingOrdersAsync(webSocket, accountKey, queue, cts.Token), cts.Token);
+            var updatesTask = Task.Run(() => SendOrderUpdatesAsync(webSocket, accountKey, cts.Token), cts.Token);
+
+            await Task.WhenAny(wsTask, updatesTask);
+            cts.Cancel();
 
             try
             {
-                using var stream = session.Client.GetStream();
-
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    var request = await TryReadGatewayRequestAsync(stream, cancellationToken);
-                    if (request == null)
-                    {
-                        break;
-                    }
-
-                    var accountKey = request.PlaceOrderRequest?.AccountKey;
-
-                    if (!string.IsNullOrWhiteSpace(accountKey) && string.IsNullOrWhiteSpace(session.AccountKey))
-                    {
-                        session.AccountKey = accountKey;
-                    }
-
-                    if (session.Queue == null && !string.IsNullOrWhiteSpace(session.AccountKey))
-                    {
-                        if (_requestOutQueue.TryGetQueue(session.AccountKey, out var queue) && queue != null)
-                        {
-                            session.Queue = queue;
-                        }
-                    }
-
-                    if (session.Queue == null)
-                    {
-                        _logger.LogWarning("Cannot enqueue request for connection {ConnectionId} because account key is unknown or invalid", session.ConnectionId);
-                        break;
-                    }
-
-                    while (!session.Queue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
-                        await Task.Delay(1, cancellationToken);
-                }
+                await Task.WhenAll(wsTask, updatesTask);
             }
-            catch (OperationCanceledException)
-            {
-                // graceful shutdown
-            }
-            catch (IOException ex)
-            {
-                _logger.LogInformation(ex, "Connection {ConnectionId} closed", session.ConnectionId);
-            }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Connection {ConnectionId} failed", session.ConnectionId);
+                _logger.LogError(ex, "Error in WebSocket session for account {AccountKey}", accountKey);
+            }
+
+            _logger.LogInformation("WebSocket session ended for account {AccountKey}", accountKey);
+        }
+
+        private async Task ReadIncomingOrdersAsync(WebSocket webSocket, string accountKey, MPSCQueue<GatewayRequest> queue, CancellationToken cancellationToken)
+        {
+            var buffer = new byte[8192];
+            using var ms = new MemoryStream();
+
+            while (!cancellationToken.IsCancellationRequested && webSocket.State == WebSocketState.Open)
+            {
+                try
+                {
+                    var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        await webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                        break;
+                    }
+
+                    if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        ms.Write(buffer, 0, result.Count);
+
+                        if (result.EndOfMessage)
+                        {
+                            var json = Encoding.UTF8.GetString(ms.ToArray());
+                            ms.SetLength(0);
+
+                            try
+                            {
+                                var document = JsonSerializer.Deserialize<JsonElement>(json);
+                                GatewayRequest? request = null;
+
+                                if (document.TryGetProperty("AccountKey", out _) && document.TryGetProperty("Symbol", out _))
+                                {
+                                    var placeOrder = document.Deserialize<PlaceOrderRequest>();
+                                    if (placeOrder != null && placeOrder.AccountKey == accountKey)
+                                    {
+                                        request = GatewayRequest.FromPlaceOrder(placeOrder);
+                                    }
+                                }
+                                else if (document.TryGetProperty("OrderId", out _))
+                                {
+                                    var cancelOrder = document.Deserialize<CancelOrderRequest>();
+                                    if (cancelOrder != null)
+                                    {
+                                        request = GatewayRequest.FromCancelOrder(cancelOrder);
+                                    }
+                                }
+
+                                if (request != null)
+                                {
+                                    while (!queue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
+                                    {
+                                        await Task.Delay(1, cancellationToken);
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogWarning("Unrecognized or invalid message shape from WebSocket from account {AccountKey}", accountKey);
+                                }
+                            }
+                            catch (JsonException ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to deserialize JSON from WebSocket from account {AccountKey}", accountKey);
+                            }
+                        }
+                    }
+                }
+                catch (WebSocketException)
+                {
+                    // Usually means client disconnected unexpectedly
+                    break;
+                }
+            }
+        }
+
+        private async Task SendOrderUpdatesAsync(WebSocket webSocket, string accountKey, CancellationToken cancellationToken)
+        {
+            var channel = Channel.CreateUnbounded<OrderUpdateEvent>();
+            var handler = new ChannelEventHandler(channel.Writer);
+
+            _eventBus.Subscribe(handler);
+
+            try
+            {
+                var initialOrders = _orderRepository.GetByAccountKey(accountKey);
+                foreach (var order in initialOrders)
+                {
+                    var initialEvent = new OrderUpdateEvent { Order = order, Remark = "snapshot" };
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(initialEvent);
+                    
+                    if (webSocket.State == WebSocketState.Open)
+                    {
+                        await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+                    }
+                }
+
+                await foreach (var orderUpdate in channel.Reader.ReadAllAsync(cancellationToken))
+                {
+                    if (webSocket.State != WebSocketState.Open)
+                        break;
+
+                    if (orderUpdate.Order.AccountKey != accountKey)
+                        continue;
+
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(orderUpdate);
+                    
+                    // Simple lock or synchronization isn't strictly needed here because
+                    // SendAsync is thread-affine but only being called by this Task loop.
+                    await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+                }
             }
             finally
             {
-                _sessionsByConnectionId.TryRemove(session.ConnectionId, out _);
-                session.Client.Dispose();
-                _logger.LogInformation("Disconnected connection {ConnectionId} account {AccountKey}", session.ConnectionId, session.AccountKey ?? "unknown");
+                _eventBus.Unsubscribe(handler);
             }
-        }
-
-        private async Task<GatewayRequest?> TryReadGatewayRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
-        {
-            try
-            {
-                var payload = await _serializer.DeserializeAsync<JsonElement>(stream, cancellationToken);
-                if (payload.ValueKind != JsonValueKind.Object)
-                {
-                    _logger.LogWarning("Unrecognized message payload type from connection stream");
-                    return null;
-                }
-
-                if (payload.TryGetProperty("accountKey", out _) && payload.TryGetProperty("symbol", out _))
-                {
-                    var placeOrder = payload.Deserialize<PlaceOrderRequest>();
-                    if (placeOrder == null)
-                    {
-                        _logger.LogWarning("Failed to parse place-order payload from connection stream");
-                        return null;
-                    }
-
-                    return GatewayRequest.FromPlaceOrder(placeOrder);
-                }
-
-                if (payload.TryGetProperty("orderId", out _))
-                {
-                    var cancelOrder = payload.Deserialize<CancelOrderRequest>();
-                    if (cancelOrder == null)
-                    {
-                        _logger.LogWarning("Failed to parse cancel-order payload from connection stream");
-                        return null;
-                    }
-
-                    return GatewayRequest.FromCancelOrder(cancelOrder);
-                }
-
-                _logger.LogWarning("Unrecognized message shape from connection stream");
-                return null;
-            }
-            catch (EndOfStreamException)
-            {
-                return null;
-            }
-            catch (OperationCanceledException)
-            {
-                return null;
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogWarning(ex, "Failed to deserialize order gateway message from stream");
-                return null;
-            }
-        }
-
-        private sealed class ConnectionSession
-        {
-            public ConnectionSession(string connectionId, TcpClient client)
-            {
-                ConnectionId = connectionId;
-                Client = client;
-            }
-
-            public string ConnectionId { get; }
-            public TcpClient Client { get; }
-            public MPSCQueue<GatewayRequest>? Queue { get; set; }
-            public string? AccountKey { get; set; }
         }
     }
 }

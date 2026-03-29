@@ -64,7 +64,7 @@ builder.Services.AddSingleton<IOrderBookFactory, OrderBookFactory>();
 builder.Services.AddSingleton<ISystemAggregatorConsumerFactory, SystemAggregatorConsumerFactory>();
 builder.Services.AddSingleton<IOrderBookConsumerFactory, OrderBookConsumerFactory>();
 
-builder.Services.AddHostedService<OrderGatewayService>();
+builder.Services.AddSingleton<OrderGatewayService>();
 builder.Services.AddHostedService<OrderManagementService>();
 builder.Services.AddHostedService<RiskManagementService>();
 builder.Services.AddHostedService<MatchingEngineService>();
@@ -80,6 +80,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseWebSockets();
 
 app.UseAuthorization();
 

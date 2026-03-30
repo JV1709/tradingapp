@@ -1,0 +1,139 @@
+<mxfile host="app.diagrams.net" modified="2026-03-31T00:00:00.000Z" agent="Mozilla/5.0" etag="abc123" version="24.0.0" type="device">
+  <diagram name="Frontend Architecture" id="frontend-diagram">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- UI Layer -->
+        <mxCell id="ui-group" value="UI Layer (React Pages)" style="group;align=left;verticalAlign=top;fillColor=#e1f5ff;strokeColor=#01579b;rounded=1;fontSize=14;fontStyle=bold;" vertex="1" parent="1" connectable="0">
+          <mxGeometry x="50" y="50" width="320" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="app" value="App.tsx&#10;(Root Component)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3e5fc;strokeColor=#0277bd;fontSize=11;" parent="ui-group" vertex="1">
+          <mxGeometry x="10" y="30" width="280" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="login" value="LoginPage&#10;(Auth &amp; Account Creation)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3e5fc;strokeColor=#0277bd;fontSize=11;" parent="ui-group" vertex="1">
+          <mxGeometry x="10" y="95" width="130" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="dashboard" value="Dashboard&#10;(Trading Interface)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3e5fc;strokeColor=#0277bd;fontSize=11;" parent="ui-group" vertex="1">
+          <mxGeometry x="160" y="95" width="130" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- State Management Layer -->
+        <mxCell id="state-group" value="State Management" style="group;align=left;verticalAlign=top;fillColor=#f3e5f5;strokeColor=#512da8;rounded=1;fontSize=14;fontStyle=bold;" entity="1" parent="1" connectable="0">
+          <mxGeometry x="450" y="50" width="320" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="context" value="TradingContext&#10;(React Context)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#6a1b9a;fontSize=11;" parent="state-group" vertex="1">
+          <mxGeometry x="10" y="30" width="130" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="hook" value="useTradingClient&#10;(Custom Hook)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#6a1b9a;fontSize=11;" parent="state-group" vertex="1">
+          <mxGeometry x="160" y="30" width="130" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Client Layer -->
+        <mxCell id="client-group" value="Client Layer" style="group;align=left;verticalAlign=top;fillColor=#e8f5e9;strokeColor=#1b5e20;rounded=1;fontSize=14;fontStyle=bold;" entity="1" parent="1" connectable="0">
+          <mxGeometry x="850" y="50" width="320" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="trading-client" value="TradingClient&#10;(Composite Client)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=11;" parent="client-group" vertex="1">
+          <mxGeometry x="85" y="30" width="130" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="account-client" value="AccountClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" parent="client-group" vertex="1">
+          <mxGeometry x="10" y="120" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="instrument-client" value="InstrumentClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" parent="client-group" vertex="1">
+          <mxGeometry x="85" y="120" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="order-client" value="OrderClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" parent="client-group" vertex="1">
+          <mxGeometry x="160" y="120" width="60" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="price-client" value="PriceClient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" parent="client-group" vertex="1">
+          <mxGeometry x="235" y="120" width="60" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Types Layer -->
+        <mxCell id="types-group" value="Shared Types" style="group;align=left;verticalAlign=top;fillColor=#fff3e0;strokeColor=#e65100;rounded=1;fontSize=14;fontStyle=bold;" entity="1" parent="1" connectable="0">
+          <mxGeometry x="50" y="350" width="320" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="types" value="types.ts&#10;(Account, Order, Quote, Instrument)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#e65100;fontSize=11;" parent="types-group" vertex="1">
+          <mxGeometry x="10" y="30" width="280" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Backend APIs - individually positioned below clients -->
+        <mxCell id="account-api" value="Account API&#10;(REST)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="840" y="350" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="instrument-api" value="Instrument API&#10;(REST)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="920" y="350" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="order-api" value="Order API&#10;(WebSocket)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="350" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="price-api" value="Price API&#10;(WebSocket)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="350" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Connections: UI to State -->
+        <mxCell id="edge1" value="provides config" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="app" target="context">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge2" value="uses" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="login" target="hook">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge3" value="uses" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="dashboard" target="hook">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Connections: State to Client -->
+        <mxCell id="edge4" value="manages" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="context" target="trading-client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge5" value="reads context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="hook" target="context">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Connections: TradingClient to Sub-Clients -->
+        <mxCell id="edge6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="trading-client" target="account-client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="trading-client" target="instrument-client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="trading-client" target="order-client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="trading-client" target="price-client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Connections: Clients to Types -->
+        <mxCell id="edge10" style="dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="account-client" target="types">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge11" style="dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="instrument-client" target="types">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge12" style="dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="order-client" target="types">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge13" style="dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="price-client" target="types">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Connections: Clients to Backend APIs -->
+        <mxCell id="edge14" value="create/subscribe" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="account-client" target="account-api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge15" value="fetch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="instrument-client" target="instrument-api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge16" value="place/cancel/subscribe" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="order-client" target="order-api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge17" value="subscribe" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=9;" edge="1" parent="1" source="price-client" target="price-api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

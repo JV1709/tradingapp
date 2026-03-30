@@ -101,10 +101,12 @@ namespace MatchingEngine
             return Task.Run(async () =>
             {
                 _logger.LogInformation("OrderBookConsumer execution loop started for {Symbol}.", _symbol);
+                var idleDelayMs = 1;
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     if (_commandInQueue.TryDequeue(out var command))
                     {
+                        idleDelayMs = 1;
                         _logger.LogInformation("Dequeued command for {Symbol}: IsCancel={IsCancel}, OrderId={OrderId}",
                             _symbol, command.IsCancel, command.IsCancel ? command.CancelRequest?.OrderId.ToString() : command.Order?.OrderId.ToString());
                         if (command.IsCancel && command.CancelRequest != null)
@@ -144,7 +146,9 @@ namespace MatchingEngine
                     }
                     else
                     {
-                        await Task.Delay(1, stoppingToken);
+                        await Task.Delay(idleDelayMs, stoppingToken);
+                        if (idleDelayMs < 64)
+                            idleDelayMs *= 2;
                     }
                 }
                 _logger.LogInformation("OrderBookConsumer execution loop finished for {Symbol}.", _symbol);

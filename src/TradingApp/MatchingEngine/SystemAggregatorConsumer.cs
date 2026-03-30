@@ -101,6 +101,7 @@ namespace MatchingEngine
             return Task.Run(async () =>
             {
                 _logger.LogInformation("SystemAggregatorConsumer execution loop started.");
+                var idleDelayMs = 1;
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     bool workDone = false;
@@ -110,8 +111,7 @@ namespace MatchingEngine
                     {
                         _logger.LogInformation("Dequeued CancelOrderRequest for OrderId {OrderId} from CancelQueue.", cancelReq.OrderId);
                         var cmd = MatchingEngineCommand.CreateCancelOrder(cancelReq);
-                        while (!_commandOutQueue.TryEnqueue(cmd) && !stoppingToken.IsCancellationRequested)
-                            await Task.Delay(1, stoppingToken);
+                        await EnqueueWithBackoffAsync(() => _commandOutQueue.TryEnqueue(cmd), stoppingToken);
                         _logger.LogInformation("Enqueued MatchingEngineCommand for CancelOrderRequest of OrderId {OrderId} to AggregatedCommandQueue.", cancelReq.OrderId);
 
                         workDone = true;
@@ -121,8 +121,7 @@ namespace MatchingEngine
                     {
                         _logger.LogInformation("Dequeued Order {OrderId} from InstrumentQueue.", order.OrderId);
                         var cmd = MatchingEngineCommand.CreateAddOrder(order);
-                        while (!_commandOutQueue.TryEnqueue(cmd) && !stoppingToken.IsCancellationRequested)
-                            await Task.Delay(1, stoppingToken);
+                        await EnqueueWithBackoffAsync(() => _commandOutQueue.TryEnqueue(cmd), stoppingToken);
                         _logger.LogInformation("Enqueued MatchingEngineCommand for OrderId {OrderId} to AggregatedCommandQueue.", order.OrderId);
 
                         workDone = true;
@@ -130,11 +129,28 @@ namespace MatchingEngine
 
                     if (!workDone)
                     {
-                        await Task.Delay(1, stoppingToken);
+                        await Task.Delay(idleDelayMs, stoppingToken);
+                        if (idleDelayMs < 64)
+                            idleDelayMs *= 2;
+                    }
+                    else
+                    {
+                        idleDelayMs = 1;
                     }
                 }
                 _logger.LogInformation("SystemAggregatorConsumer execution loop finished.");
             }, stoppingToken);
+        }
+
+        private static async Task EnqueueWithBackoffAsync(Func<bool> tryEnqueue, CancellationToken cancellationToken)
+        {
+            var delayMs = 1;
+            while (!tryEnqueue() && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(delayMs, cancellationToken);
+                if (delayMs < 64)
+                    delayMs *= 2;
+            }
         }
     }
 }

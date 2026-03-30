@@ -8,6 +8,7 @@
         public required string Symbol { get; set; }
         public long TotalQuantity { get; set; }
         public long FilledQuantity { get; set; }
+        public decimal AverageFillPrice { get; set; }
         public decimal Price { get; set; }
         // Side: 1 for buy, 2 for sell
         public Side Side { get; set; }

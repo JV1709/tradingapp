@@ -116,21 +116,25 @@ namespace OrderManagementSystem
         {
             return Task.Run(async () =>
             {
+                var idleDelayMs = 1;
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     if (_requestQueue.TryDequeue(out var request))
                     {
-                        ProcessRequest(request, cancellationToken);
+                        idleDelayMs = 1;
+                        await ProcessRequestAsync(request, cancellationToken);
                     }
                     else
                     {
-                        await Task.Delay(1, cancellationToken);
+                        await Task.Delay(idleDelayMs, cancellationToken);
+                        if (idleDelayMs < 64)
+                            idleDelayMs *= 2;
                     }
                 }
             }, cancellationToken);
         }
 
-        private void ProcessRequest(GatewayRequest request, CancellationToken cancellationToken)
+        private async Task ProcessRequestAsync(GatewayRequest request, CancellationToken cancellationToken)
         {
             switch (request.Type)
             {
@@ -140,7 +144,7 @@ namespace OrderManagementSystem
                         _logger.LogWarning("Received PlaceOrder request with null PlaceOrderRequest on shard {ShardId}", _shardId);
                         return;
                     }
-                    ProcessPlaceOrderRequest(request.PlaceOrderRequest, cancellationToken);
+                    await ProcessPlaceOrderRequestAsync(request.PlaceOrderRequest, cancellationToken);
                     break;
                 case GatewayRequestType.CancelOrder:
                     if (request.CancelOrderRequest == null)
@@ -148,7 +152,7 @@ namespace OrderManagementSystem
                         _logger.LogWarning("Received CancelOrder request with null CancelOrderRequest on shard {ShardId}", _shardId);
                         return;
                     }
-                    ProcessCancelOrderRequest(request.CancelOrderRequest, cancellationToken);
+                    await ProcessCancelOrderRequestAsync(request.CancelOrderRequest, cancellationToken);
                     break;
                 default:
                     _logger.LogWarning("Unknown request type on shard {ShardId}: {RequestType}", _shardId, request.Type);
@@ -156,7 +160,7 @@ namespace OrderManagementSystem
             }
         }
 
-        private void ProcessPlaceOrderRequest(PlaceOrderRequest request, CancellationToken cancellationToken)
+        private async Task ProcessPlaceOrderRequestAsync(PlaceOrderRequest request, CancellationToken cancellationToken)
         {
             _logger.LogInformation("Processing PlaceOrder request for shard {ShardId}, Symbol {Symbol}: AccountKey={AccountKey}, Quantity={Quantity}, Price={Price}, Side={Side}",
                 _shardId, request.Symbol, request.AccountKey, request.Quantity, request.Price, request.Side);
@@ -175,14 +179,13 @@ namespace OrderManagementSystem
             _orderRepository.TryAdd(order);
             _eventBus.Publish(new OrderUpdateEvent { Order = order, Remark = "Order Created" });
 
-            while (!_orderOutQueue.TryEnqueue(order) && !cancellationToken.IsCancellationRequested)
-                Task.Delay(1, cancellationToken);
+            await EnqueueWithBackoffAsync(() => _orderOutQueue.TryEnqueue(order), cancellationToken);
 
             _logger.LogInformation("Order placed successfully for shard {ShardId}, Symbol {Symbol}: AccountKey={AccountKey}, Quantity={Quantity}, Price={Price}, Side={Side}",
                 _shardId, request.Symbol, request.AccountKey, request.Quantity, request.Price, request.Side);
         }
 
-        private void ProcessCancelOrderRequest(CancelOrderRequest request, CancellationToken cancellationToken)
+        private async Task ProcessCancelOrderRequestAsync(CancelOrderRequest request, CancellationToken cancellationToken)
         {
             if (!_orderRepository.TryGet(request.OrderId, out var order))
             {
@@ -201,9 +204,19 @@ namespace OrderManagementSystem
             }
 
             var queue = _cancelOutQueueSystem.GetQueue(order.Symbol);
-            
-            while (!queue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
-                Task.Delay(1, cancellationToken);
+
+            await EnqueueWithBackoffAsync(() => queue.TryEnqueue(request), cancellationToken);
+        }
+
+        private static async Task EnqueueWithBackoffAsync(Func<bool> tryEnqueue, CancellationToken cancellationToken)
+        {
+            var delayMs = 1;
+            while (!tryEnqueue() && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(delayMs, cancellationToken);
+                if (delayMs < 64)
+                    delayMs *= 2;
+            }
         }
     }
 }

@@ -183,6 +183,13 @@ namespace OrderManagementSystem
                     return;
                 }
 
+                var previousFilledQuantity = order.FilledQuantity;
+                var newFilledQuantity = previousFilledQuantity + matchedQuantity;
+
+                var previousNotional = order.AverageFillPrice * previousFilledQuantity;
+                var matchedNotional = fillPrice * matchedQuantity;
+                order.AverageFillPrice = (previousNotional + matchedNotional) / newFilledQuantity;
+
                 order.FilledQuantity += matchedQuantity;
                 var fsm = new OrderFSM(order.Status);
                 var isFill = order.FilledQuantity >= order.TotalQuantity;

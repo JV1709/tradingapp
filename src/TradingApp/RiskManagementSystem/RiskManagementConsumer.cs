@@ -115,10 +115,12 @@ namespace RiskManagementSystem
         {
             return Task.Run(async () =>
             {
+                var idleDelayMs = 1;
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     if (_orderInQueue.TryDequeue(out var order))
                     {
+                        idleDelayMs = 1;
                         var (isValid, message) = ValidateOrder(order);
                         if (!isValid)
                         {
@@ -172,16 +174,28 @@ namespace RiskManagementSystem
                         });
 
                         var queue = _orderOutQueue.GetQueue(order.Symbol);
-                        while (!queue.TryEnqueue(order) && !stoppingToken.IsCancellationRequested)
-                            await Task.Delay(1, stoppingToken);
+                        await EnqueueWithBackoffAsync(() => queue.TryEnqueue(order), stoppingToken);
                         _logger.LogInformation("Order enqueued to output queue for partition: {PartitionId}", _partitionId);
                     }
                     else
                     {
-                        await Task.Delay(1, stoppingToken);
+                        await Task.Delay(idleDelayMs, stoppingToken);
+                        if (idleDelayMs < 64)
+                            idleDelayMs *= 2;
                     }
                 }
             }, stoppingToken);
+        }
+
+        private static async Task EnqueueWithBackoffAsync(Func<bool> tryEnqueue, CancellationToken cancellationToken)
+        {
+            var delayMs = 1;
+            while (!tryEnqueue() && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(delayMs, cancellationToken);
+                if (delayMs < 64)
+                    delayMs *= 2;
+            }
         }
 
         private (bool IsValid, string Message) ValidateOrder(Order order)

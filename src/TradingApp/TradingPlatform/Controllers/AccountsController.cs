@@ -103,15 +103,19 @@ namespace TradingPlatformAPI.Controllers
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    if (channel.Reader.TryRead(out var updateEvent) && string.Equals(updateEvent.Username, username, StringComparison.OrdinalIgnoreCase))
+                    if (!await channel.Reader.WaitToReadAsync(cancellationToken))
                     {
+                        break;
+                    }
+
+                    while (channel.Reader.TryRead(out var updateEvent))
+                    {
+                        if (!string.Equals(updateEvent.Username, username, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
                         var json = System.Text.Json.JsonSerializer.Serialize(updateEvent);
                         await Response.WriteAsync(json + '\n', cancellationToken);
                         await Response.Body.FlushAsync(cancellationToken);
-                    }
-                    else
-                    {
-                        await Task.Delay(100, cancellationToken);
                     }
                 }
             }

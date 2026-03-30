@@ -134,8 +134,13 @@ namespace OrderGateway
 
                                 if (request != null)
                                 {
+                                    var delayMs = 1;
                                     while (!queue.TryEnqueue(request) && !cancellationToken.IsCancellationRequested)
-                                        await Task.Delay(1, cancellationToken);
+                                    {
+                                        await Task.Delay(delayMs, cancellationToken);
+                                        if (delayMs < 64)
+                                            delayMs *= 2;
+                                    }
                                 }
                                 else
                                 {

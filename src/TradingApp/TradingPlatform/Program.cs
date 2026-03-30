@@ -1,6 +1,7 @@
 using Infrastructure.Event;
 using Infrastructure.Queue;
 using MatchingEngine;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 using Model.Config;
 using Model.Domain;
@@ -20,6 +21,16 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = null; // PascalCase to match domain models and WebSocket events
     });
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    // Apply globally to all endpoints (including those from launchSettings)
+    options.ConfigureEndpointDefaults(endpointOptions =>
+    {
+        endpointOptions.Protocols = HttpProtocols.Http1AndHttp2;
+    });
+});
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

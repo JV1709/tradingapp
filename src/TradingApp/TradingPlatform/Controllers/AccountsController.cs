@@ -89,9 +89,11 @@ namespace TradingPlatformAPI.Controllers
             }
 
             Response.ContentType = "text/event-stream";
+            Response.Headers.CacheControl = "no-cache";
+            Response.Headers.Connection = "keep-alive";
 
             var initialJson = System.Text.Json.JsonSerializer.Serialize(account);
-            await Response.WriteAsync(initialJson + '\n', cancellationToken);
+            await Response.WriteAsync($"data: {initialJson}\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
 
             var channel = Channel.CreateUnbounded<AccountUpdateEvent>();
@@ -114,7 +116,7 @@ namespace TradingPlatformAPI.Controllers
                             continue;
 
                         var json = System.Text.Json.JsonSerializer.Serialize(updateEvent);
-                        await Response.WriteAsync(json + '\n', cancellationToken);
+                        await Response.WriteAsync($"data: {json}\n\n", cancellationToken);
                         await Response.Body.FlushAsync(cancellationToken);
                     }
                 }

@@ -30,6 +30,8 @@ export interface Order {
   TotalQuantity: number;
   FilledQuantity: number;
   Price: number;
+  AverageFillPrice?: number;
+  AvgFillPrice?: number;
   Side: Side;
 }
 
@@ -38,7 +40,8 @@ export interface Order {
  */
 export interface Holding {
   Symbol: string;
-  Quantity: number;
+  TotalQuantity: number;
+  AvailableQuantity: number;
 }
 
 /**

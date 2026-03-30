@@ -4,12 +4,15 @@ import './index.css'
 import App from './App.tsx'
 import { TradingClientProvider } from './logic/hooks/useTradingClient'
 
-// Using relative paths to leverage the Vite dev server proxy
+// Use an absolute API URL (e.g. https://localhost:7289) to call backend directly.
+// When left empty, relative paths are used and routed through Vite proxy.
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+
 const config = {
-  accountClientConfig: { hostname: '' },
-  instrumentClientConfig: { hostname: '' },
-  orderClientConfig: { hostname: '' },
-  priceClientConfig: { hostname: '' }
+  accountClientConfig: { hostname: apiBaseUrl },
+  instrumentClientConfig: { hostname: apiBaseUrl },
+  orderClientConfig: { hostname: apiBaseUrl },
+  priceClientConfig: { hostname: apiBaseUrl }
 };
 
 createRoot(document.getElementById('root')!).render(

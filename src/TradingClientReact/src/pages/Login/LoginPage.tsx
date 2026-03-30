@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useTradingClient } from '../../logic/hooks/useTradingClient';
 
-const LoginPage: React.FC<{ onLoginSuccess: (username: string, balance: string) => void }> = ({ onLoginSuccess }) => {
-  const { createAccount, subscribeToAccount } = useTradingClient();
+export const LoginPage: React.FC<{ onLoginSuccess: (username: string, balance: string) => void }> = ({ onLoginSuccess }) => {
+  const { createAccount, subscribeToAccount, resetSession } = useTradingClient();
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [balance, setBalance] = useState('10000'); // Default balance for new accounts
@@ -11,17 +11,25 @@ const LoginPage: React.FC<{ onLoginSuccess: (username: string, balance: string) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    const normalizedUsername = username.trim();
+
+    if (!normalizedUsername) {
+      alert('Username is required.');
+      setIsLoading(false);
+      return;
+    }
     
     try {
+      // Clear previous account/order streams so login checks are scoped to this username only.
+      resetSession();
+
       if (isLogin) {
-        // Just subscribe if user exists
-        await subscribeToAccount(username);
+        await subscribeToAccount(normalizedUsername);
       } else {
-        // Create then subscribe
-        await createAccount(username, Number(balance));
-        await subscribeToAccount(username);
+        await createAccount(normalizedUsername, Number(balance));
+        await subscribeToAccount(normalizedUsername);
       }
-      onLoginSuccess(username, balance);
+      onLoginSuccess(normalizedUsername, balance);
     } catch (err) {
       alert(`Authentication failed: ${err}`);
     } finally {

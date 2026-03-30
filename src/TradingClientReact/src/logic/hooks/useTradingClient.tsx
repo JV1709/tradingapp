@@ -13,9 +13,11 @@ interface TradingContextType {
   createAccount: (username: string, initialBalance: number) => Promise<Account>;
   subscribeToAccount: (username: string) => Promise<void>;
   subscribeToQuote: (symbol: string) => Promise<void>;
+  unsubscribeFromQuote: (symbol: string) => void;
   placeOrder: (request: PlaceOrderRequest) => void;
   cancelOrder: (request: CancelOrderRequest) => void;
   fetchInstruments: () => Promise<void>;
+  resetSession: () => void;
 }
 
 const TradingContext = createContext<TradingContextType | undefined>(undefined);
@@ -44,6 +46,9 @@ export const TradingClientProvider: React.FC<{ config: TradingClientConfig; chil
   }, [client]);
 
   const subscribeToAccount = React.useCallback(async (username: string) => {
+    setAccount(null);
+    setOrders([]);
+
     // We await the WebSocket connection as it gives us confirmation
     await client.orderClient.subscribe(username, (event) => {
       setOrders(prev => {
@@ -57,21 +62,46 @@ export const TradingClientProvider: React.FC<{ config: TradingClientConfig; chil
       });
     });
 
-    // We do NOT await the account stream subscription as it is an infinite stream
-    client.accountClient.subscribe(username, (updatedAccount) => {
-      setAccount(updatedAccount);
+    // Require at least one account update before considering login successful.
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timeoutId = window.setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error('Account not found. Please register first.'));
+        }
+      }, 5000);
+
+      client.accountClient.subscribe(username, (updatedAccount) => {
+        setAccount(updatedAccount);
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timeoutId);
+          resolve();
+        }
+      }).catch((error) => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timeoutId);
+          reject(error);
+        }
+      });
     });
   }, [client]);
 
-  const subscribeToQuote = React.useCallback(async (symbol: string) => {
-    // We do NOT await the quote stream subscription as it is an infinite stream
-    client.priceClient.subscribe(symbol, (quote) => {
+  const subscribeToQuote = React.useCallback((symbol: string) => {
+    // Return the stream promise so callers can observe startup failures.
+    return client.priceClient.subscribe(symbol, (quote) => {
       setQuotes(prev => {
         const next = new Map(prev);
         next.set(symbol, quote);
         return next;
       });
     });
+  }, [client]);
+
+  const unsubscribeFromQuote = React.useCallback((symbol: string) => {
+    client.priceClient.unsubscribe(symbol);
   }, [client]);
 
   const placeOrder = React.useCallback((request: PlaceOrderRequest) => {
@@ -87,6 +117,15 @@ export const TradingClientProvider: React.FC<{ config: TradingClientConfig; chil
     setInstruments(data);
   }, [client]);
 
+  const resetSession = React.useCallback(() => {
+    client.dispose();
+    client.instrumentClient.clearCache();
+    setAccount(null);
+    setOrders([]);
+    setQuotes(new Map());
+    setInstruments([]);
+  }, [client]);
+
   const value: TradingContextType = React.useMemo(() => ({
     client,
     account,
@@ -96,10 +135,12 @@ export const TradingClientProvider: React.FC<{ config: TradingClientConfig; chil
     createAccount,
     subscribeToAccount,
     subscribeToQuote,
+    unsubscribeFromQuote,
     placeOrder,
     cancelOrder,
     fetchInstruments,
-  }), [client, account, orders, quotes, instruments, createAccount, subscribeToAccount, subscribeToQuote, placeOrder, cancelOrder, fetchInstruments]);
+    resetSession,
+  }), [client, account, orders, quotes, instruments, createAccount, subscribeToAccount, subscribeToQuote, unsubscribeFromQuote, placeOrder, cancelOrder, fetchInstruments, resetSession]);
 
   return <TradingContext.Provider value={value}>{children}</TradingContext.Provider>;
 };

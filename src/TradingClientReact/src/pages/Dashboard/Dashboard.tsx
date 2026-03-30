@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTradingClient } from '../../logic/hooks/useTradingClient';
+import { Order, OrderStatus } from '../../logic/types';
 
 const Dashboard: React.FC<{ username: string; balance: string; onLogout: () => void }> = ({ username, onLogout }) => {
   const {
@@ -9,29 +10,146 @@ const Dashboard: React.FC<{ username: string; balance: string; onLogout: () => v
     instruments,
     fetchInstruments,
     subscribeToQuote,
-    placeOrder
+    unsubscribeFromQuote,
+    placeOrder,
+    cancelOrder
   } = useTradingClient();
 
   const [selectedSymbol, setSelectedSymbol] = useState('');
   const [orderQty, setOrderQty] = useState(1);
   const [orderPrice, setOrderPrice] = useState(0);
   const [orderSide, setOrderSide] = useState<'BUY' | 'SELL'>('BUY');
+  const [ordersView, setOrdersView] = useState<'ACTIVE' | 'SETTLED'>('ACTIVE');
+  const [isTabActive, setIsTabActive] = useState(() => !document.hidden);
+  const subscribedSymbolsRef = useRef(new Set<string>());
+  const pendingSinceRef = useRef(new Map<string, number>());
+  const quoteTimestampRef = useRef(new Map<string, string>());
+  const marketWatchSymbols = useMemo(() => {
+    if (instruments.length === 0) {
+      return [] as string[];
+    }
+
+    const preferred = ['AAPL', 'GOOG', 'MSFT', 'AMZN'];
+    const available = new Set(instruments.map((inst) => inst.Symbol));
+    const selected = preferred.filter((symbol) => available.has(symbol));
+
+    if (selected.length > 0) {
+      return selected;
+    }
+
+    return instruments.slice(0, 4).map((inst) => inst.Symbol);
+  }, [instruments]);
+  const positiveHoldings = (account?.Holdings || []).filter(holding => holding.TotalQuantity > 0);
 
   // Load instruments on mount
   useEffect(() => {
-    fetchInstruments();
+    fetchInstruments().catch((error) => {
+      console.error('Failed to load instruments on dashboard mount:', error);
+    });
   }, [fetchInstruments]);
 
-  // Subscribe to all instruments once they are loaded
+  // Pick a default symbol once instruments are loaded
   useEffect(() => {
     if (instruments.length > 0) {
-      instruments.forEach(inst => subscribeToQuote(inst.Symbol));
       if (!selectedSymbol) {
         setSelectedSymbol(instruments[0].Symbol);
-        setOrderPrice(quotes.get(instruments[0].Symbol)?.AskPrice || 0);
       }
     }
-  }, [instruments, subscribeToQuote, selectedSymbol, quotes]);
+  }, [instruments, selectedSymbol]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      setIsTabActive(!document.hidden);
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  // Release quote streams when this tab goes to background.
+  useEffect(() => {
+    if (isTabActive) {
+      return;
+    }
+
+    subscribedSymbolsRef.current.forEach((symbol) => {
+      unsubscribeFromQuote(symbol);
+    });
+    subscribedSymbolsRef.current.clear();
+    pendingSinceRef.current.clear();
+  }, [isTabActive, unsubscribeFromQuote]);
+
+  // Keep a bounded market watch stream set active.
+  useEffect(() => {
+    if (!isTabActive) {
+      return;
+    }
+
+    const symbolsToSubscribe = selectedSymbol
+      ? Array.from(new Set([...marketWatchSymbols, selectedSymbol]))
+      : marketWatchSymbols;
+
+    symbolsToSubscribe.forEach((symbol) => {
+      if (!symbol || subscribedSymbolsRef.current.has(symbol)) {
+        return;
+      }
+
+      subscribedSymbolsRef.current.add(symbol);
+      pendingSinceRef.current.set(symbol, Date.now());
+      subscribeToQuote(symbol).catch((error) => {
+        console.error(`Failed to subscribe to quote for ${symbol}:`, error);
+        subscribedSymbolsRef.current.delete(symbol);
+        pendingSinceRef.current.delete(symbol);
+      });
+    });
+  }, [isTabActive, marketWatchSymbols, selectedSymbol, subscribeToQuote]);
+
+  // Mark symbols as healthy only when a fresh quote arrives.
+  useEffect(() => {
+    quotes.forEach((quote, symbol) => {
+      const previousTimestamp = quoteTimestampRef.current.get(symbol);
+      if (previousTimestamp === quote.Timestamp) {
+        return;
+      }
+
+      quoteTimestampRef.current.set(symbol, quote.Timestamp);
+      pendingSinceRef.current.delete(symbol);
+    });
+  }, [quotes]);
+
+  // Retry symbols that remain pending for too long.
+  useEffect(() => {
+    if (!isTabActive) {
+      return;
+    }
+
+    const retryDelayMs = 12000;
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      pendingSinceRef.current.forEach((startedAt, symbol) => {
+        if (now - startedAt < retryDelayMs) {
+          return;
+        }
+
+        console.warn(`Quote stream for ${symbol} is stale; retrying subscription.`);
+        unsubscribeFromQuote(symbol);
+        subscribedSymbolsRef.current.delete(symbol);
+        pendingSinceRef.current.set(symbol, Date.now());
+
+        subscribeToQuote(symbol).catch((error) => {
+          console.error(`Retry failed for quote ${symbol}:`, error);
+          subscribedSymbolsRef.current.delete(symbol);
+          pendingSinceRef.current.delete(symbol);
+        });
+      });
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isTabActive, subscribeToQuote, unsubscribeFromQuote]);
 
   // Update order price when selected symbol changes
   useEffect(() => {
@@ -54,6 +172,177 @@ const Dashboard: React.FC<{ username: string; balance: string; onLogout: () => v
     });
 
     alert(`Order submitted for ${selectedSymbol}`);
+  };
+
+  const getOrderProgress = (order: Order) => {
+    const total = Math.max(order.TotalQuantity, 0);
+    const filled = Math.max(order.FilledQuantity, 0);
+    const remaining = Math.max(total - filled, 0);
+    const progressPct = total > 0 ? Math.min(100, (filled / total) * 100) : 0;
+
+    return { total, filled, remaining, progressPct };
+  };
+
+  const getOrderPnlMetrics = (order: Order): { pct: number; amount: number } | null => {
+    const avgFillPrice = order.AverageFillPrice ?? order.AvgFillPrice;
+    const lastPrice = quotes.get(order.Symbol)?.LastDonePrice;
+    const filledQty = Math.max(order.FilledQuantity, 0);
+
+    if (!avgFillPrice || avgFillPrice <= 0 || !lastPrice || lastPrice <= 0 || filledQty <= 0) {
+      return null;
+    }
+
+    const rawPct = ((lastPrice - avgFillPrice) / avgFillPrice) * 100;
+    const signedPct = order.Side === 1 ? rawPct : -rawPct;
+    const rawAmount = (lastPrice - avgFillPrice) * filledQty;
+    const signedAmount = order.Side === 1 ? rawAmount : -rawAmount;
+
+    return {
+      pct: signedPct,
+      amount: signedAmount,
+    };
+  };
+
+  const isCancellable = (status: OrderStatus): boolean => {
+    return status === OrderStatus.New || status === OrderStatus.PartiallyFilled || status === OrderStatus.PendingNew;
+  };
+
+  const isCompletedOrder = (status: OrderStatus): boolean => {
+    return status === OrderStatus.Filled || status === OrderStatus.Cancelled;
+  };
+
+  const isSettledOrder = (status: OrderStatus): boolean => {
+    return isCompletedOrder(status) || status === OrderStatus.Rejected;
+  };
+
+  const getStatusLabel = (status: OrderStatus): string => {
+    switch (status) {
+      case OrderStatus.Filled:
+        return 'Filled';
+      case OrderStatus.New:
+        return 'New';
+      case OrderStatus.PartiallyFilled:
+        return 'Partial';
+      case OrderStatus.Cancelled:
+        return 'Cancelled';
+      case OrderStatus.PendingCancel:
+        return 'Pending Cancel';
+      case OrderStatus.Rejected:
+        return 'Rejected';
+      case OrderStatus.PendingNew:
+        return 'Pending New';
+      default:
+        return 'Pending';
+    }
+  };
+
+  const handleCancelOrder = (orderId: string) => {
+    try {
+      cancelOrder({ OrderId: orderId });
+    } catch (error) {
+      console.error(`Failed to cancel order ${orderId}:`, error);
+      alert('Failed to send cancel request. Please try again.');
+    }
+  };
+
+  const activeOrders = orders.filter(order => !isSettledOrder(order.Status as OrderStatus));
+  const settledOrders = orders.filter(order => isSettledOrder(order.Status as OrderStatus));
+  const displayedOrders = ordersView === 'ACTIVE' ? activeOrders : settledOrders;
+
+  const renderOrderCard = (order: Order, allowCancel: boolean) => {
+    const progress = getOrderProgress(order);
+    const canCancel = allowCancel && isCancellable(order.Status as OrderStatus);
+    const avgFillPrice = order.AverageFillPrice ?? order.AvgFillPrice;
+    const orderPnl = getOrderPnlMetrics(order);
+    const pnlColor = orderPnl === null
+      ? 'var(--text-muted)'
+      : orderPnl.pct >= 0
+        ? '#10b981'
+        : '#ef4444';
+
+    return (
+      <div key={order.OrderId} className="glass" style={{ padding: '1rem', borderRadius: '12px', marginBottom: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{order.Symbol}</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{order.OrderId.substring(0, 8)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{
+              fontSize: '0.7rem',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: order.Side === 1 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+              color: order.Side === 1 ? '#10b981' : '#ef4444'
+            }}>
+              {order.Side === 1 ? 'BUY' : 'SELL'}
+            </span>
+            <span style={{ fontSize: '0.85rem' }}>{order.TotalQuantity} @ {order.Price}</span>
+          </div>
+          <span style={{
+            fontSize: '0.75rem',
+            color: order.Status === OrderStatus.Filled ? '#10b981' : '#fbbf24'
+          }}>
+            {getStatusLabel(order.Status as OrderStatus)}
+          </span>
+        </div>
+
+        <div style={{ marginTop: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+            <span>{progress.filled}/{progress.total} filled</span>
+            <span>Remaining: {progress.remaining}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.35rem' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Avg Fill Price</span>
+            <span style={{ color: avgFillPrice && avgFillPrice > 0 ? 'rgba(255,255,255,0.92)' : 'var(--text-muted)', fontWeight: 600, fontFeatureSettings: '"tnum"' }}>
+              {avgFillPrice && avgFillPrice > 0 ? `$${avgFillPrice.toFixed(2)}` : '--'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.35rem' }}>
+            <span style={{ color: 'var(--text-muted)' }}>P/L</span>
+            <span style={{ color: pnlColor, fontWeight: 600, fontFeatureSettings: '"tnum"' }}>
+              {orderPnl === null
+                ? '--'
+                : `${orderPnl.pct >= 0 ? '+' : ''}${orderPnl.pct.toFixed(2)}% (${orderPnl.amount >= 0 ? '+' : '-'}$${Math.abs(orderPnl.amount).toFixed(2)})`}
+            </span>
+          </div>
+          <div style={{
+            height: '8px',
+            borderRadius: '999px',
+            background: 'rgba(255,255,255,0.08)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              width: `${progress.progressPct}%`,
+              height: '100%',
+              borderRadius: '999px',
+              background: order.Side === 1 ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, #ef4444, #f87171)',
+              transition: 'width 0.25s ease'
+            }} />
+          </div>
+        </div>
+
+        {allowCancel && (
+          <div style={{ marginTop: '0.85rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => handleCancelOrder(order.OrderId)}
+              disabled={!canCancel}
+              style={{
+                background: canCancel ? 'rgba(239, 68, 68, 0.12)' : 'rgba(148, 163, 184, 0.15)',
+                color: canCancel ? '#ef4444' : 'rgba(255,255,255,0.5)',
+                border: canCancel ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(148, 163, 184, 0.25)',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                cursor: canCancel ? 'pointer' : 'not-allowed'
+              }}
+            >
+              Cancel Order
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (!account) {
@@ -89,7 +378,7 @@ const Dashboard: React.FC<{ username: string; balance: string; onLogout: () => v
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
           </div>
-          <span style={{ fontWeight: 700, fontSize: '1.2rem', letterSpacing: '0.05rem' }}>CRYPTO PLATFORM</span>
+          <span style={{ fontWeight: 700, fontSize: '1.2rem', letterSpacing: '0.05rem' }}>TRADING PLATFORM</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
@@ -142,40 +431,42 @@ const Dashboard: React.FC<{ username: string; balance: string; onLogout: () => v
         maxHeight: 'calc(100vh - 120px)'
       }}>
 
-        {/* Market Watch */}
-        <div className="glass" style={{ padding: '1.5rem', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <h2 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }}>Market Watch</h2>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                  <th style={{ padding: '8px 4px' }}>SYMBOL</th>
-                  <th style={{ padding: '8px 4px' }}>BID</th>
-                  <th style={{ padding: '8px 4px' }}>ASK</th>
-                  <th style={{ padding: '8px 4px' }}>LAST</th>
-                </tr>
-              </thead>
-              <tbody>
-                {instruments.map(inst => {
-                  const q = quotes.get(inst.Symbol);
-                  return (
-                    <tr key={inst.Symbol}
-                      onClick={() => setSelectedSymbol(inst.Symbol)}
-                      style={{
-                        cursor: 'pointer',
-                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                        background: selectedSymbol === inst.Symbol ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
-                        transition: 'background 0.2s'
-                      }}>
-                      <td style={{ padding: '12px 8px', fontWeight: 600 }}>{inst.Symbol}</td>
-                      <td style={{ padding: '12px 8px', color: '#10b981', fontFeatureSettings: '"tnum"' }}>{q?.BidPrice?.toFixed(2) || '---'}</td>
-                      <td style={{ padding: '12px 8px', color: '#ef4444', fontFeatureSettings: '"tnum"' }}>{q?.AskPrice?.toFixed(2) || '---'}</td>
-                      <td style={{ padding: '12px 8px', fontFeatureSettings: '"tnum"' }}>{q?.LastDonePrice?.toFixed(2) || '---'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <div style={{ display: 'grid', gap: '1.5rem', minHeight: 0 }}>
+          {/* Market Watch */}
+          <div className="glass" style={{ padding: '1.5rem', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <h2 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }}>Market Watch</h2>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    <th style={{ padding: '8px 4px' }}>SYMBOL</th>
+                    <th style={{ padding: '8px 4px' }}>BID</th>
+                    <th style={{ padding: '8px 4px' }}>ASK</th>
+                    <th style={{ padding: '8px 4px' }}>LAST</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {instruments.map(inst => {
+                    const q = quotes.get(inst.Symbol);
+                    return (
+                      <tr key={inst.Symbol}
+                        onClick={() => setSelectedSymbol(inst.Symbol)}
+                        style={{
+                          cursor: 'pointer',
+                          borderBottom: '1px solid rgba(255,255,255,0.05)',
+                          background: selectedSymbol === inst.Symbol ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                          transition: 'background 0.2s'
+                        }}>
+                        <td style={{ padding: '12px 8px', fontWeight: 600 }}>{inst.Symbol}</td>
+                        <td style={{ padding: '12px 8px', color: '#10b981', fontFeatureSettings: '"tnum"' }}>{q?.BidPrice?.toFixed(2) || '---'}</td>
+                        <td style={{ padding: '12px 8px', color: '#ef4444', fontFeatureSettings: '"tnum"' }}>{q?.AskPrice?.toFixed(2) || '---'}</td>
+                        <td style={{ padding: '12px 8px', fontFeatureSettings: '"tnum"' }}>{q?.LastDonePrice?.toFixed(2) || '---'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -243,50 +534,96 @@ const Dashboard: React.FC<{ username: string; balance: string; onLogout: () => v
           </form>
         </div>
 
-        {/* Active Orders */}
-        <div className="glass" style={{ padding: '1.5rem', borderRadius: '16px', display: 'flex', flexDirection: 'column' }}>
-          <h2 style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Active Orders</h2>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {orders.map(order => (
-              <div key={order.OrderId} className="glass" style={{ padding: '1rem', borderRadius: '12px', marginBottom: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{order.Symbol}</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{order.OrderId.substring(0, 8)}</span>
+        {/* Holdings and Orders */}
+        <div style={{ display: 'grid', gap: '1.5rem', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0 }}>
+          <div className="glass" style={{ padding: '1rem 1.25rem', borderRadius: '16px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+              <h2 style={{ fontSize: '1rem', marginBottom: 0 }}>My Holdings</h2>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{positiveHoldings.length} symbols</span>
+            </div>
+            <div>
+              <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                    <th style={{ padding: '6px 4px' }}>SYMBOL</th>
+                    <th style={{ padding: '6px 4px', textAlign: 'right' }}>TOTAL</th>
+                    <th style={{ padding: '6px 4px', textAlign: 'right' }}>AVAIL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positiveHoldings.map(holding => (
+                    <tr key={holding.Symbol} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '7px 4px', fontWeight: 600, fontSize: '0.84rem' }}>{holding.Symbol}</td>
+                      <td style={{ padding: '7px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"', fontSize: '0.82rem' }}>
+                        {holding.TotalQuantity.toLocaleString()}
+                      </td>
+                      <td style={{ padding: '7px 4px', textAlign: 'right', fontFeatureSettings: '"tnum"', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                        {holding.AvailableQuantity.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {positiveHoldings.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', paddingTop: '0.4rem' }}>
+                  No holdings yet.
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{
-                      fontSize: '0.7rem',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      background: order.Side === 1 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                      color: order.Side === 1 ? '#10b981' : '#ef4444'
-                    }}>
-                      {order.Side === 1 ? 'BUY' : 'SELL'}
-                    </span>
-                    <span style={{ fontSize: '0.85rem' }}>{order.TotalQuantity} @ {order.Price}</span>
-                  </div>
-                  <span style={{
-                    fontSize: '0.75rem',
-                    color: order.Status === 2 ? '#10b981' : '#fbbf24'
-                  }}>
-                    {order.Status === 2 ? 'Filled' :
-                      order.Status === 0 ? 'New' :
-                        order.Status === 1 ? 'Partial' :
-                          order.Status === 4 ? 'Cancelled' :
-                            'Pending'}
-                  </span>
+              )}
+            </div>
+          </div>
+
+          <div className="glass" style={{ padding: '1.25rem', borderRadius: '16px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.9rem', gap: '0.8rem' }}>
+              <h2 style={{ fontSize: '1.05rem', marginBottom: 0 }}>Orders</h2>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {ordersView === 'ACTIVE' ? `${activeOrders.length} open` : `${settledOrders.length} settled`}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '10px', marginBottom: '0.9rem' }}>
+              <button
+                onClick={() => setOrdersView('ACTIVE')}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  background: ordersView === 'ACTIVE' ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                  color: ordersView === 'ACTIVE' ? '#10b981' : 'var(--text-muted)',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '0.8rem',
+                  fontWeight: 600
+                }}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setOrdersView('SETTLED')}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  background: ordersView === 'SETTLED' ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                  color: ordersView === 'SETTLED' ? '#a5b4fc' : 'var(--text-muted)',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '0.8rem',
+                  fontWeight: 600
+                }}
+              >
+                Settled
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '2px' }}>
+              {displayedOrders.map(order => renderOrderCard(order, ordersView === 'ACTIVE'))}
+              {displayedOrders.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', paddingTop: '0.5rem' }}>
+                  {ordersView === 'ACTIVE' ? 'No active orders.' : 'No settled orders.'}
                 </div>
-              </div>
-            ))}
+              )}
+            </div>
           </div>
         </div>
 
       </main>
 
-      <footer style={{ position: 'relative', zIndex: 1, padding: '1rem 2rem', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-        <div>© 2026 Advanced Trading Systems v1.0.6</div>
-      </footer>
     </div>
   );
 };

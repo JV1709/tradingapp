@@ -17,7 +17,10 @@ export class AccountClient {
    * Creates a new account via REST POST.
    */
   async createAccount(username: string, initialBalance: number): Promise<Account> {
-    const request: CreateAccountRequest = { username, initialBalance };
+    const request: CreateAccountRequest = {
+      Username: username,
+      InitialBalance: initialBalance,
+    };
 
     try {
       const response = await fetch(`${this.config.hostname}/${this.baseUri}`, {
@@ -73,17 +76,29 @@ export class AccountClient {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep the last partial line in the buffer
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() || ''; // Keep last partial SSE event in buffer
 
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const account: Account = JSON.parse(line);
-              onUpdate(account);
-            } catch (err) {
-              console.error('Error parsing account update JSON:', err, 'Line:', line);
-            }
+        for (const eventChunk of events) {
+          const dataLines = eventChunk
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trim());
+
+          if (dataLines.length === 0) {
+            continue;
+          }
+
+          const payload = dataLines.join('\n');
+          if (!payload) {
+            continue;
+          }
+
+          try {
+            const account: Account = JSON.parse(payload);
+            onUpdate(account);
+          } catch (err) {
+            console.error('Error parsing account SSE JSON:', err, 'Payload:', payload);
           }
         }
       }

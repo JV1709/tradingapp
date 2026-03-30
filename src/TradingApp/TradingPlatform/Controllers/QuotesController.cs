@@ -40,6 +40,8 @@ namespace TradingPlatformAPI.Controllers
         public async Task<IActionResult> StreamQuotes(string symbol, CancellationToken cancellationToken)
         {
             Response.ContentType = "text/event-stream";
+            Response.Headers.CacheControl = "no-cache";
+            Response.Headers.Connection = "keep-alive";
 
             _quoteRepository.TryGet(symbol, out var initialQuote);
             if (initialQuote == null)
@@ -52,7 +54,7 @@ namespace TradingPlatformAPI.Controllers
             }
 
             var initialJson = JsonSerializer.Serialize(initialQuote);
-            await Response.WriteAsync(initialJson + '\n', cancellationToken);
+            await Response.WriteAsync($"data: {initialJson}\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
 
             var channel = Channel.CreateUnbounded<NewQuoteEvent>();
@@ -64,13 +66,23 @@ namespace TradingPlatformAPI.Controllers
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    if (channel.Reader.TryRead(out var newQuoteEvent) && string.Equals(newQuoteEvent.Quote.Symbol, symbol, StringComparison.OrdinalIgnoreCase))
+                    if (!await channel.Reader.WaitToReadAsync(cancellationToken))
                     {
+                        break;
+                    }
+
+                    while (channel.Reader.TryRead(out var newQuoteEvent))
+                    {
+                        if (!string.Equals(newQuoteEvent.Quote.Symbol, symbol, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
                         var quote = newQuoteEvent.Quote;
                         var json = JsonSerializer.Serialize(quote);
-                        await Response.WriteAsync(json + '\n', cancellationToken);
+                        await Response.WriteAsync($"data: {json}\n\n", cancellationToken);
                         await Response.Body.FlushAsync(cancellationToken);
-
+                        
                     }
                 }
             }

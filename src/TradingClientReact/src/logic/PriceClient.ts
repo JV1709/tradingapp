@@ -46,17 +46,29 @@ export class PriceClient {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Partial line back to buffer
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() || ''; // Keep last partial SSE event in buffer
 
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const quote: Quote = JSON.parse(line);
-              onUpdate(quote);
-            } catch (err) {
-              console.error('Error parsing quote update JSON:', err, 'Line:', line);
-            }
+        for (const eventChunk of events) {
+          const dataLines = eventChunk
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trim());
+
+          if (dataLines.length === 0) {
+            continue;
+          }
+
+          const payload = dataLines.join('\n');
+          if (!payload) {
+            continue;
+          }
+
+          try {
+            const quote: Quote = JSON.parse(payload);
+            onUpdate(quote);
+          } catch (err) {
+            console.error('Error parsing quote SSE JSON:', err, 'Payload:', payload);
           }
         }
       }

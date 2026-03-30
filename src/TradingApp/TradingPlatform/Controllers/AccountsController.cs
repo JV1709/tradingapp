@@ -1,5 +1,7 @@
 using Infrastructure.Event;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using Model.Config;
 using Model.Domain;
 using Model.Event;
 using Repository;
@@ -13,11 +15,13 @@ namespace TradingPlatformAPI.Controllers
     {
         private readonly IAccountRepository _accountRepository;
         private readonly IEventBus _eventBus;
+        private readonly MarketConfig _config;
 
-        public AccountsController(IAccountRepository accountRepository, IEventBus eventBus)
+        public AccountsController(IAccountRepository accountRepository, IEventBus eventBus, IOptions<MarketConfig> config)
         {
             _accountRepository = accountRepository;
             _eventBus = eventBus;
+            _config = config.Value;
         }
 
         private class ChannelEventHandler : IEventHandler<AccountUpdateEvent>
@@ -53,12 +57,19 @@ namespace TradingPlatformAPI.Controllers
                 return BadRequest("InitialBalance must be non-negative.");
             }
 
+            var holdings = _config.Instruments.Select(instr => new Holding
+            {
+                Symbol = instr.Symbol,
+                TotalQuantity = 100,
+                AvailableQuantity = 100
+            }).ToList();
+
             var account = new Account
             {
                 Username = request.Username,
                 TotalBalance = request.InitialBalance,
                 AvailableBalance = request.InitialBalance,
-                Holdings = new List<Holding>()
+                Holdings = holdings
             };
 
             if (!_accountRepository.TryAdd(account))

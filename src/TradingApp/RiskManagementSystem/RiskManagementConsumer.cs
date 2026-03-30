@@ -3,7 +3,6 @@ using Infrastructure.Queue;
 using Model.Domain;
 using Model.Event;
 using Repository;
-using System.Threading;
 
 namespace RiskManagementSystem
 {
@@ -132,9 +131,36 @@ namespace RiskManagementSystem
                             continue;
                         }
 
-                        _accountRepository.TryGet(order.AccountKey, out var account);
+                        if (!_accountRepository.TryGet(order.AccountKey, out var account))
+                        {
+                            _logger.LogWarning("Account not found while reserving for partition: {PartitionId}, account: {AccountKey}", _partitionId, order.AccountKey);
+                            _eventBus.Publish(new OrderRejectedEvent
+                            {
+                                OrderId = order.OrderId,
+                                RejectionReason = "Account not found"
+                            });
+                            continue;
+                        }
                         if (order.Side == Side.Buy)
+                        {
                             account.AvailableBalance -= order.Price * order.TotalQuantity;
+                        }
+                        else
+                        {
+                            var holding = account.Holdings.FirstOrDefault(h => string.Equals(h.Symbol, order.Symbol, StringComparison.OrdinalIgnoreCase));
+                            if (holding == null || holding.AvailableQuantity < order.TotalQuantity)
+                            {
+                                _logger.LogWarning("Insufficient available holdings while reserving for partition: {PartitionId}, account: {AccountKey}, symbol: {Symbol}", _partitionId, order.AccountKey, order.Symbol);
+                                _eventBus.Publish(new OrderRejectedEvent
+                                {
+                                    OrderId = order.OrderId,
+                                    RejectionReason = "Insufficient available holdings"
+                                });
+                                continue;
+                            }
+
+                            holding.AvailableQuantity -= order.TotalQuantity;
+                        }
                         _accountRepository.AddOrUpdate(account);
 
                         _eventBus.Publish(new AccountUpdateEvent
@@ -169,8 +195,18 @@ namespace RiskManagementSystem
             if (!_accountRepository.TryGet(order.AccountKey, out var account))
                 return (false, "Account not found");
 
-            if (order.Price * order.TotalQuantity > account.AvailableBalance)
-                return (false, "Insufficient funds");
+            if (order.Side == Side.Buy)
+            {
+                if (order.Price * order.TotalQuantity > account.AvailableBalance)
+                    return (false, "Insufficient funds");
+            }
+
+            if (order.Side == Side.Sell)
+            {
+                var holding = account.Holdings.FirstOrDefault(h => string.Equals(h.Symbol, order.Symbol, StringComparison.OrdinalIgnoreCase));
+                if (holding == null || holding.AvailableQuantity < order.TotalQuantity)
+                    return (false, "Insufficient available holdings");
+            }
 
             return (true, string.Empty);
         }

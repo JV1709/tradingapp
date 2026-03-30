@@ -101,7 +101,7 @@ namespace OrderManagementSystem
                     order.Status = fsm.CurrentState;
                     _orderRepository.AddOrUpdate(order);
                     _eventBus.Publish(new OrderUpdateEvent { Order = order, Remark = "Cancelled" });
-                    ReleaseReservedBalanceForBuyOrder(order);
+                    ReleaseReservedResources(order);
                     _logger.LogInformation("Order {OrderId} status updated to {Status}.", @event.OrderId, order.Status);
                 }
             }
@@ -112,22 +112,30 @@ namespace OrderManagementSystem
             return Task.CompletedTask;
         }
 
-        private void ReleaseReservedBalanceForBuyOrder(Order order)
+        private void ReleaseReservedResources(Order order)
         {
-            if (order.Side != Side.Buy)
-            {
-                return;
-            }
-
             if (!_accountRepository.TryGet(order.AccountKey, out var account))
             {
-                _logger.LogWarning("Account {AccountKey} not found while releasing funds for OrderId {OrderId}.", order.AccountKey, order.OrderId);
+                _logger.LogWarning("Account {AccountKey} not found while releasing reserved resources for OrderId {OrderId}.", order.AccountKey, order.OrderId);
                 return;
             }
 
             var remainingQuantity = Math.Max(0L, order.TotalQuantity - order.FilledQuantity);
-            var releasedAmount = order.Price * (decimal)remainingQuantity;
-            account.AvailableBalance = Math.Min(account.TotalBalance, account.AvailableBalance + releasedAmount);
+
+            if (order.Side == Side.Buy)
+            {
+                var releasedAmount = order.Price * (decimal)remainingQuantity;
+                account.AvailableBalance = Math.Min(account.TotalBalance, account.AvailableBalance + releasedAmount);
+            }
+
+            if (order.Side == Side.Sell)
+            {
+                var holding = account.Holdings.FirstOrDefault(h => string.Equals(h.Symbol, order.Symbol, StringComparison.OrdinalIgnoreCase));
+                if (holding != null)
+                {
+                    holding.AvailableQuantity = holding.AvailableQuantity + remainingQuantity;
+                }
+            }
 
             _accountRepository.AddOrUpdate(account);
             _eventBus.Publish(new AccountUpdateEvent
@@ -221,11 +229,12 @@ namespace OrderManagementSystem
                 var holding = account.Holdings.FirstOrDefault(h => string.Equals(h.Symbol, order.Symbol, StringComparison.OrdinalIgnoreCase));
                 if (holding == null)
                 {
-                    account.Holdings.Add(new Holding { Symbol = order.Symbol, Quantity = matchedQuantity });
+                    account.Holdings.Add(new Holding { Symbol = order.Symbol, TotalQuantity = matchedQuantity, AvailableQuantity = matchedQuantity });
                 }
                 else
                 {
-                    holding.Quantity += matchedQuantity;
+                    holding.TotalQuantity += matchedQuantity;
+                    holding.AvailableQuantity += matchedQuantity;
                 }
             }
             else
@@ -241,8 +250,9 @@ namespace OrderManagementSystem
                 }
                 else
                 {
-                    holding.Quantity = Math.Max(0, holding.Quantity - matchedQuantity);
-                    if (holding.Quantity == 0)
+                    holding.TotalQuantity = Math.Max(0, holding.TotalQuantity - matchedQuantity);
+                    holding.AvailableQuantity = Math.Min(holding.AvailableQuantity, holding.TotalQuantity);
+                    if (holding.TotalQuantity == 0)
                     {
                         account.Holdings.Remove(holding);
                     }

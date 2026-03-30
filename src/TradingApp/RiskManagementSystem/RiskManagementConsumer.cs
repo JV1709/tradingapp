@@ -178,7 +178,7 @@ namespace RiskManagementSystem
                     }
                     else
                     {
-                        Thread.Yield();
+                        await Task.Delay(1, stoppingToken);
                     }
                 }
             }, stoppingToken);

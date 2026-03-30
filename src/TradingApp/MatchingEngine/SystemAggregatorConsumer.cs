@@ -130,7 +130,7 @@ namespace MatchingEngine
 
                     if (!workDone)
                     {
-                        Thread.Yield(); // Prevent starvation/tight loop burnout
+                        await Task.Delay(1, stoppingToken);
                     }
                 }
                 _logger.LogInformation("SystemAggregatorConsumer execution loop finished.");

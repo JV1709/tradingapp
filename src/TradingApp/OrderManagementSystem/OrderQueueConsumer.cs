@@ -114,7 +114,7 @@ namespace OrderManagementSystem
 
         protected virtual Task ExecuteAsync(CancellationToken cancellationToken)
         {
-            return Task.Run(() =>
+            return Task.Run(async () =>
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -124,7 +124,7 @@ namespace OrderManagementSystem
                     }
                     else
                     {
-                        Thread.Yield();
+                        await Task.Delay(1, cancellationToken);
                     }
                 }
             }, cancellationToken);

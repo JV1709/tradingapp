@@ -98,7 +98,7 @@ namespace MatchingEngine
 
         protected virtual Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            return Task.Run(() =>
+            return Task.Run(async () =>
             {
                 _logger.LogInformation("OrderBookConsumer execution loop started for {Symbol}.", _symbol);
                 while (!stoppingToken.IsCancellationRequested)
@@ -144,7 +144,7 @@ namespace MatchingEngine
                     }
                     else
                     {
-                        Thread.Yield();
+                        await Task.Delay(1, stoppingToken);
                     }
                 }
                 _logger.LogInformation("OrderBookConsumer execution loop finished for {Symbol}.", _symbol);
